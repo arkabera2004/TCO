@@ -3,7 +3,8 @@ import { cookies } from "next/headers";
 import { Geist, Michroma } from "next/font/google";
 
 import { AuthGate } from "@/components/auth/AuthGate";
-import { THEME_STORAGE_KEY, ThemeProvider, type ThemeMode } from "@/context/theme-context";
+import { ThemeProvider } from "@/context/theme-context";
+import { THEME_STORAGE_KEY, type ThemeMode } from "@/lib/theme";
 import "./globals.css";
 
 /* Functional UI face, the default for the whole interface. */

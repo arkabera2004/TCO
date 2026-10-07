@@ -1,10 +1,9 @@
 "use client";
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { THEME_STORAGE_KEY, type ThemeMode } from "@/lib/theme";
 
-export type ThemeMode = "light" | "dark";
-
-export const THEME_STORAGE_KEY = "sahay-theme";
+export { THEME_STORAGE_KEY, type ThemeMode };
 
 interface ThemeContextValue {
   theme: ThemeMode;
