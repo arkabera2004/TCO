@@ -22,7 +22,10 @@ const michroma = Michroma({
 });
 
 export const metadata: Metadata = {
-  title: "SAHAY | Wayam AI",
+  title: {
+    default: "SAHAY | Wayam AI",
+    template: "%s | SAHAY",
+  },
   description:
     "Lifecycle cost intelligence for locomotive fleets — TCO simulation, Weibull reliability, Monte Carlo risk, forecasting and tender decision support.",
   applicationName: "SAHAY",
