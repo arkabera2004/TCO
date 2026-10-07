@@ -19,6 +19,7 @@ dist-ssr
 # Next.js
 .next/
 next-env.d.ts
+*.tsbuildinfo
 
 # Wrangler / Cloudflare
 .wrangler/
