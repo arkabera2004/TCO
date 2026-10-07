@@ -1,4 +1,3 @@
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { icons, type IconName } from "@/components/icons/registry";
 import { cn } from "@/lib/utils";
 
@@ -71,9 +70,9 @@ export function AppIcon({
   // Decorative unless the caller provides an accessible label
   const hidden = (ariaHidden ?? !ariaLabel) !== false && ariaHidden !== "false";
   const dimension = SIZE_VAR[size] ?? SIZE_VAR.md;
-  const glyph = icons[name];
+  const Glyph = icons[name];
 
-  if (!glyph) {
+  if (!Glyph) {
     if (process.env.NODE_ENV !== "production") {
       console.warn(`[AppIcon] Unknown icon name: "${name}"`);
     }
@@ -81,8 +80,7 @@ export function AppIcon({
   }
 
   return (
-    <FontAwesomeIcon
-      icon={glyph}
+    <Glyph
       className={cn(
         "shrink-0 inline-flex items-center justify-center align-middle",
         tone && TONE_CLASS[tone],
@@ -92,7 +90,8 @@ export function AppIcon({
       aria-hidden={hidden || undefined}
       aria-label={ariaLabel}
       role={ariaLabel ? "img" : undefined}
-      title={title}
-    />
+    >
+      {title ? <title>{title}</title> : null}
+    </Glyph>
   );
 }
