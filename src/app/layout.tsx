@@ -37,7 +37,8 @@ export const metadata: Metadata = {
   openGraph: {
     siteName: "SAHAY",
     title: "SAHAY — Fleet Lifecycle Intelligence",
-    description: "Fleet lifecycle simulation, forecasting and risk intelligence for locomotive tenders.",
+    description:
+      "Fleet lifecycle simulation, forecasting and risk intelligence for locomotive tenders.",
     type: "website",
   },
   twitter: {

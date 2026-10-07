@@ -4,13 +4,7 @@ import { useState } from "react";
 import { PageHeader, PageBody } from "@/components/layout/page-header";
 import { Panel, SplitRow, KpiTile, StatusBadge, PriorityBadge } from "@/components/ui/primitives";
 import { HealthRing } from "@/components/shared/HealthRing";
-import {
-  LOCOMOTIVES,
-  SYSTEMS,
-  ASSEMBLIES,
-  COMPONENTS,
-  healthColor,
-} from "@/data/syntheticData";
+import { LOCOMOTIVES, SYSTEMS, ASSEMBLIES, COMPONENTS, healthColor } from "@/data/syntheticData";
 import { weibullFailureProb } from "@/utils/simulationEngine";
 import { cn } from "@/lib/utils";
 

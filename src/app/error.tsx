@@ -3,13 +3,7 @@
 import { useEffect } from "react";
 import { reportAppError } from "@/lib/error-reporting";
 
-export default function ErrorBoundary({
-  error,
-  reset,
-}: {
-  error: Error;
-  reset: () => void;
-}) {
+export default function ErrorBoundary({ error, reset }: { error: Error; reset: () => void }) {
   useEffect(() => {
     console.error(error);
     reportAppError(error, { boundary: "nextjs_root_error_boundary" });

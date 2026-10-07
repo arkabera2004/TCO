@@ -1,6 +1,10 @@
 import type { MetadataRoute } from "next";
 
-const ENTRIES: { path: string; changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"]; priority: number }[] = [
+const ENTRIES: {
+  path: string;
+  changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"];
+  priority: number;
+}[] = [
   { path: "/", changeFrequency: "weekly", priority: 1.0 },
   { path: "/fleet-explorer", changeFrequency: "weekly", priority: 0.8 },
   { path: "/simulation", changeFrequency: "weekly", priority: 0.9 },
