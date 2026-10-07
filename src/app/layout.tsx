@@ -24,9 +24,25 @@ const michroma = Michroma({
 export const metadata: Metadata = {
   title: "SAHAY | Wayam AI",
   description:
-    "Locomotive fleet lifecycle cost simulation, forecasting, and risk intelligence platform.",
+    "Lifecycle cost intelligence for locomotive fleets — TCO simulation, Weibull reliability, Monte Carlo risk, forecasting and tender decision support.",
+  applicationName: "SAHAY",
+  authors: [{ name: "Wayam AI" }],
   icons: {
     icon: "/favicon.svg",
+  },
+  manifest: "/manifest.json",
+  appleWebApp: {
+    title: "SAHAY",
+  },
+  openGraph: {
+    siteName: "SAHAY",
+    title: "SAHAY — Fleet Lifecycle Intelligence",
+    description: "Fleet lifecycle simulation, forecasting and risk intelligence for locomotive tenders.",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "SAHAY — Fleet Lifecycle Intelligence",
   },
 };
 
