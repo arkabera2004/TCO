@@ -1,3 +1,15 @@
+/**
+ * Dependency audit (Next.js migration, design-system-retrofit branch):
+ * kept on zustand rather than moving to React Context or local state.
+ * This store is read by AppShell (every route, header + footer) and by
+ * sibling route pages (/, /simulation, /tender, /bom, /scenarios,
+ * /maintenance) that have no parent/child relationship — the state is
+ * genuinely global and not prop-drillable from a single layout segment.
+ * setParams also triggers a synchronous TCO recompute on every slider
+ * tick; a plain Context provider would re-render every consumer
+ * (including AppShell) on each tick, where zustand's store scopes
+ * updates to the hook call sites that actually read the changed slice.
+ */
 import { create } from "zustand";
 import {
   DEFAULT_PARAMS,

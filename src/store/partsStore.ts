@@ -1,3 +1,10 @@
+/**
+ * Dependency audit (Next.js migration, design-system-retrofit branch):
+ * kept on zustand for the same reason as simulationStore — the parts
+ * list and labor % are edited on /bom and /library, then consumed by
+ * sibling pages (/, /maintenance, MaintenanceAnalytics) with no shared
+ * parent beyond the root layout. Genuinely global, cross-route state.
+ */
 import { create } from "zustand";
 import { PARTS, type Part, type MaintIntervalUnit } from "@/data/bomData";
 import { DEFAULT_LABOR_PCT } from "@/utils/tcoEngine";
