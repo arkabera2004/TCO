@@ -9,6 +9,7 @@ import { IconButton } from "@/components/icons/IconButton";
 import type { IconName } from "@/components/icons/registry";
 import { FilterChip, FilterChipGroup } from "@/components/shared/FilterChip";
 import { useSimulationStore, formatHorizon, HORIZON_ANNUAL_KM } from "@/store/simulationStore";
+import { useTheme } from "@/context/theme-context";
 import { LOCOMOTIVES } from "@/data/syntheticData";
 import { cn } from "@/lib/utils";
 import { getSession, logout } from "@/lib/auth";
@@ -113,6 +114,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const shortModel = loco.model.split(" ")[0];
   const session = getSession();
   const [navOpen, setNavOpen] = useState(false);
+  const { isDark, toggleTheme } = useTheme();
 
   // Close the mobile drawer automatically whenever the route changes.
   useEffect(() => {
@@ -268,6 +270,14 @@ export function AppShell({ children }: { children: ReactNode }) {
 
             {/* Scope controls */}
             <div className="hidden items-center gap-2 xl:flex">{horizonControls}</div>
+
+            <IconButton
+              icon={isDark ? "themeLight" : "themeDark"}
+              aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+              variant="subtle"
+              size="sm"
+              onClick={toggleTheme}
+            />
 
             <span className="inline-flex items-center gap-1.5 rounded-full border border-muted bg-action px-2.5 py-1 text-caption text-secondary">
               <span className="size-1.5 rounded-full bg-success" />
