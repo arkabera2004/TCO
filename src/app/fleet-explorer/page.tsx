@@ -507,12 +507,12 @@ function ComponentDetail({ comp }: { comp: Component }) {
                 textAnchor="middle"
                 fontSize={22}
                 fontWeight={700}
-                fill="var(--ref-gray-50)"
+                fill="var(--text-primary)"
                 fontFamily="Michroma"
               >
                 {reliability.toFixed(1)}%
               </text>
-              <text x={80} y={90} textAnchor="middle" fontSize={9} fill="var(--ref-gray-500)">
+              <text x={80} y={90} textAnchor="middle" fontSize={9} fill="var(--text-tertiary)">
                 β={comp.weibullBeta} · η={comp.weibullEta.toLocaleString()}h ·{" "}
                 {comp.currentHours.toLocaleString()}h
               </text>
