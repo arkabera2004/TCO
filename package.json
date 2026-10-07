@@ -9,6 +9,9 @@
     "build": "vite build && node -e \"const fs=require('fs'); if (fs.existsSync('dist/client/index.html')) fs.copyFileSync('dist/client/index.html','dist/client/404.html')\"",
     "build:dev": "vite build --mode development",
     "preview": "vite preview --outDir dist/client",
+    "next:dev": "next dev",
+    "next:build": "next build",
+    "next:start": "next start",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
@@ -55,6 +58,7 @@
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^1.52.0",
+    "next": "16.3.3",
     "react": "^19.2.0",
     "react-countup": "^6.5.3",
     "react-day-picker": "^9.14.0",
@@ -73,7 +77,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
-    "@types/node": "^22.16.5",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^26.6.4",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.2.0",
