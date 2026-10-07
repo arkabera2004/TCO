@@ -1,5 +1,11 @@
 import { fmtCompact } from "@/utils/formatters";
 
+// Recharts stays pinned to 2.15.x (Chronos is on 3.x). 13 route/component
+// files share 25 chart primitives (BarChart, ComposedChart, RadarChart,
+// Treemap, etc.) with this custom tooltip. Recharts 3 changes tooltip/legend
+// render-prop shapes and default animation behavior — upgrading safely needs
+// a full visual regression pass per chart, which belongs with the browser QA
+// phase, not a blind dependency bump. Revisit after that baseline exists.
 // Recharts tooltip — raised-x2 surface so it reads above cards, no blur.
 export function ChartTooltip({
   active,
