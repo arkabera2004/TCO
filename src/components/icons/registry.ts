@@ -100,6 +100,8 @@ import {
   Palette,
   Sparkles,
   Cloud,
+  Sun,
+  Moon,
   // automotive / fleet
   Wrench,
   Fuel,
@@ -217,6 +219,8 @@ export const icons = {
   palette: Palette,
   sparkle: Sparkles,
   cloud: Cloud,
+  themeLight: Sun,
+  themeDark: Moon,
 
   /* ---- automotive / fleet ---- */
   maintenance: Wrench,
