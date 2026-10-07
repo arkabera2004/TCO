@@ -1,4 +1,7 @@
-import { Link, useRouter, useRouterState } from "@tanstack/react-router";
+"use client";
+
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import CountUp from "@/components/shared/CountUp";
 import { AppIcon } from "@/components/icons/AppIcon";
@@ -9,7 +12,6 @@ import { useSimulationStore, formatHorizon, HORIZON_ANNUAL_KM } from "@/store/si
 import { LOCOMOTIVES } from "@/data/syntheticData";
 import { cn } from "@/lib/utils";
 import { getSession, logout } from "@/lib/auth";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 
 type NavItem = { to: string; label: string; icon: IconName; badge?: "NEW" | "LIVE" };
 
@@ -65,7 +67,7 @@ const CRUMB: Record<string, string> = Object.fromEntries(NAV.map((n) => [n.to, n
 function SidebarItem({ item, active }: { item: NavItem; active: boolean }) {
   return (
     <Link
-      to={item.to}
+      href={item.to}
       aria-label={item.label}
       aria-current={active ? "page" : undefined}
       className={cn(
@@ -103,7 +105,7 @@ function SidebarItem({ item, active }: { item: NavItem; active: boolean }) {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const pathname = usePathname();
   const router = useRouter();
   const { params, result, activeScenarioName, setParams, horizonUnit, setHorizonUnit } =
     useSimulationStore();
@@ -120,7 +122,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   function handleLogout() {
     logout();
     setNavOpen(false);
-    router.navigate({ to: "/login" });
+    router.push("/login");
   }
 
   const horizonControls = (
@@ -151,11 +153,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <>
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-muted px-4">
         <div className="flex items-center gap-2.5">
-          <img
-            src={`${import.meta.env.BASE_URL}wayam-logo.svg`}
-            alt="Wayam AI"
-            className="h-7 w-auto object-contain"
-          />
+          <img src="/wayam-logo.svg" alt="Wayam AI" className="h-7 w-auto object-contain" />
         </div>
         <span className="text-caption tracking-[0.08em] text-quaternary uppercase">SAHAY</span>
       </div>
@@ -197,16 +195,24 @@ export function AppShell({ children }: { children: ReactNode }) {
         {sidebarNav}
       </aside>
 
-      {/* Mobile / tablet nav drawer */}
-      <Sheet open={navOpen} onOpenChange={setNavOpen}>
-        <SheetContent
-          side="left"
-          className="bg-container border-r border-muted flex w-72 max-w-[85vw] flex-col p-0 lg:hidden"
-        >
-          <SheetTitle className="sr-only">Navigation</SheetTitle>
-          {sidebarNav}
-        </SheetContent>
-      </Sheet>
+      {/* Mobile / tablet nav drawer — hand-rolled overlay, no Radix dialog */}
+      {navOpen ? (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          onClick={() => setNavOpen(false)}
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+        />
+      ) : null}
+      <aside
+        aria-label="Navigation"
+        className={cn(
+          "bg-container border-r border-muted fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col transition-transform duration-200 ease-out lg:hidden",
+          navOpen ? "translate-x-0" : "-translate-x-full",
+        )}
+      >
+        {sidebarNav}
+      </aside>
 
       {/* Main Canvas */}
       <div className="flex h-screen w-full min-w-0 flex-1 flex-col lg:ml-60">
@@ -222,7 +228,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               onClick={() => setNavOpen(true)}
             />
             <Link
-              to="/"
+              href="/"
               className="transition-ui text-quaternary hover:text-secondary hidden sm:inline"
               aria-label="Command Center"
             >
@@ -294,13 +300,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <div className="flex items-center gap-3 shrink-0 ml-2">
             <Link
-              to="/simulation"
+              href="/simulation"
               className="text-tertiary hover:text-primary transition-colors flex items-center gap-1 text-label-sm"
             >
               <AppIcon name="play" size="xs" /> Re-run
             </Link>
             <Link
-              to="/monte-carlo"
+              href="/monte-carlo"
               className="text-tertiary hover:text-primary transition-colors hidden sm:flex items-center gap-1 text-label-sm"
             >
               Monte Carlo <AppIcon name="arrowRight" size="xs" />

@@ -1,4 +1,6 @@
-import { useRouter, useRouterState } from "@tanstack/react-router";
+"use client";
+
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { isAuthenticated } from "@/lib/auth";
@@ -7,7 +9,7 @@ import { isAuthenticated } from "@/lib/auth";
 // tracked client-side only (see src/lib/auth.ts) — this is a UI gate for a
 // demo, not real access control.
 export function AuthGate({ children }: { children: ReactNode }) {
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const pathname = usePathname();
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [authed, setAuthed] = useState(false);
@@ -29,9 +31,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!ready) return;
     if (!authed && !isLoginRoute) {
-      router.navigate({ to: "/login" });
+      router.push("/login");
     } else if (authed && isLoginRoute) {
-      router.navigate({ to: "/" });
+      router.push("/");
     }
   }, [ready, authed, isLoginRoute, router]);
 

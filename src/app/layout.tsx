@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { Geist, Michroma } from "next/font/google";
 
+import { AuthGate } from "@/components/auth/AuthGate";
 import { THEME_STORAGE_KEY, ThemeProvider, type ThemeMode } from "@/context/theme-context";
 import "./globals.css";
 
@@ -46,7 +47,9 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geist.variable} ${michroma.variable} h-full antialiased`}
     >
       <body className="h-full overflow-hidden">
-        <ThemeProvider initialTheme={theme}>{children}</ThemeProvider>
+        <ThemeProvider initialTheme={theme}>
+          <AuthGate>{children}</AuthGate>
+        </ThemeProvider>
       </body>
     </html>
   );
