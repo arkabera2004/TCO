@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Part } from "@/data/bomData";
+import { PARTS, type Part } from "@/data/bomData";
 import {
   DEFAULT_DUTY,
   DEFAULT_LABOR_PCT,
@@ -15,6 +15,7 @@ import {
   partIntervalYears,
   partTCO,
 } from "@/utils/tcoEngine";
+import { DEFAULT_PARAMS, runTCOSimulation } from "@/utils/simulationEngine";
 
 function makePart(overrides: Partial<Part> = {}): Part {
   return {
@@ -275,5 +276,32 @@ describe("failureTrend", () => {
     for (const point of trend) {
       expect(point.probability).toBeLessThanOrEqual(100);
     }
+  });
+});
+
+// Dashboard/BOM KPIs read from fleetTCO() and runTCOSimulation(), the two
+// functions behind every number on the Command Center and Simulation screens.
+// Both must be pure: same inputs in, byte-identical output out, no matter how
+// many times or in what order they're called. A reload or route change must
+// never change a KPI on its own — only an explicit input change should.
+describe("fleetTCO and runTCOSimulation determinism", () => {
+  it("fleetTCO returns identical output across repeated calls with the same input", () => {
+    const first = fleetTCO(PARTS, 20);
+    const second = fleetTCO(PARTS, 20);
+    const third = fleetTCO(PARTS, 20);
+    expect(second).toEqual(first);
+    expect(third).toEqual(first);
+  });
+
+  it("fleetTCO does not mutate the parts array it is given", () => {
+    const snapshot = JSON.parse(JSON.stringify(PARTS));
+    fleetTCO(PARTS, 20);
+    expect(PARTS).toEqual(snapshot);
+  });
+
+  it("runTCOSimulation returns identical output across repeated calls with the same params", () => {
+    const first = runTCOSimulation(DEFAULT_PARAMS);
+    const second = runTCOSimulation(DEFAULT_PARAMS);
+    expect(second).toEqual(first);
   });
 });
