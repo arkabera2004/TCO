@@ -247,9 +247,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             </span>
             <h1
               className="truncate font-display text-display-md text-primary"
-              title={CRUMB[pathname] ?? "Command Center"}
+              title={CRUMB[pathname] ?? "Not Found"}
             >
-              {CRUMB[pathname] ?? "Command Center"}
+              {CRUMB[pathname] ?? "Not Found"}
             </h1>
           </div>
 
