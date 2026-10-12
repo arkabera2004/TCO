@@ -15,13 +15,14 @@ import {
 } from "recharts";
 import Link from "next/link";
 import { PageHeader, PageBody } from "@/components/layout/page-header";
-import { Panel, SplitRow, KpiTile, StatusBadge } from "@/components/ui/primitives";
+import { Panel, SplitRow, KpiTile, StatusBadge, EmptyState } from "@/components/ui/primitives";
 import { DataTable, FilterChips, type Column } from "@/components/ui/data-table";
 import { HealthRing } from "@/components/shared/HealthRing";
 import { ChartTooltip } from "@/components/shared/ChartTooltip";
-import { HISTORICAL_TCO, FORECAST_TCO, LOCOMOTIVES, CHART_COLORS } from "@/data/syntheticData";
+import { HISTORICAL_TCO, FORECAST_TCO, CHART_COLORS } from "@/data/syntheticData";
 import { usePartsStore } from "@/store/partsStore";
 import { useSimulationStore, formatHorizon } from "@/store/simulationStore";
+import { useLocomotives } from "@/hooks/use-locomotives";
 import { fleetTCO } from "@/utils/tcoEngine";
 import { fmtCompact } from "@/utils/formatters";
 import { AppIcon } from "@/components/icons/AppIcon";
@@ -45,6 +46,78 @@ interface PartRowItem {
   buffer: number;
   customerCost: number;
   companyCost: number;
+}
+
+function statusTone(status: string): "success" | "warning" {
+  return status.toLowerCase() === "active" ? "success" : "warning";
+}
+
+function statusLabel(status: string): string {
+  return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+}
+
+function FleetStatusList() {
+  const locomotives = useLocomotives();
+
+  if (locomotives.status === "loading") {
+    return (
+      <div className="flex h-full min-h-[160px] items-center justify-center">
+        <p className="text-body-sm text-tertiary">Loading fleet status…</p>
+      </div>
+    );
+  }
+
+  if (locomotives.status === "error") {
+    return (
+      <EmptyState
+        title="Couldn't load fleet status"
+        detail={locomotives.error}
+        mark={<AppIcon name="warrantyActive" size="lg" className="text-quaternary" />}
+      />
+    );
+  }
+
+  if (locomotives.data.length === 0) {
+    return (
+      <EmptyState
+        title="No locomotives yet"
+        detail="Add a locomotive to your fleet to see live status and health here."
+      />
+    );
+  }
+
+  return (
+    <div className="flex flex-col divide-y divide-muted overflow-y-auto">
+      {locomotives.data.map((l) => (
+        <div
+          key={l.id}
+          className="flex items-center gap-3.5 p-3.5 transition-colors hover:bg-raised"
+        >
+          <HealthRing score={l.currentHealthScore} size={54} stroke={5} />
+          <div className="min-w-0 flex-1">
+            <p className="font-display text-body-md text-primary truncate">{l.model}</p>
+            <p className="text-caption text-tertiary tabular-nums">
+              {l.manufacturer} · {l.horsepower.toLocaleString()} hp · {l.availabilityPct}%
+              availability
+            </p>
+            <div className="mt-1 flex items-center gap-2">
+              <StatusBadge tone={statusTone(l.status)}>{statusLabel(l.status)}</StatusBadge>
+              <span className="text-caption text-quaternary font-mono-data tabular">
+                Score: {l.currentHealthScore}/100
+              </span>
+            </div>
+          </div>
+          <Link
+            href={statusTone(l.status) === "success" ? "/simulation" : "/asset-health"}
+            className="inline-flex h-7 items-center gap-1 rounded-full border border-muted bg-action px-2.5 text-caption text-secondary hover:border-default hover:bg-raised-2 hover:text-primary transition-colors shrink-0"
+          >
+            <span>{statusTone(l.status) === "success" ? "Simulate" : "Health"}</span>
+            <AppIcon name="arrowRight" size="xs" />
+          </Link>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function Dashboard() {
@@ -320,7 +393,10 @@ export default function Dashboard() {
             </div>
           </Panel>
 
-          {/* Fleet Status & Health */}
+          {/* Fleet Status & Health — real data from GET /locomotives (see
+              src/hooks/use-locomotives.ts). The rest of this dashboard
+              (KPIs, cost timeline, part-level table below) is still
+              synthetic/demo pending further backend wiring. */}
           <Panel
             title="Fleet Status & Health"
             action={
@@ -333,37 +409,7 @@ export default function Dashboard() {
             }
             padded={false}
           >
-            <div className="flex flex-col divide-y divide-muted overflow-y-auto">
-              {LOCOMOTIVES.map((l) => (
-                <div
-                  key={l.id}
-                  className="flex items-center gap-3.5 p-3.5 transition-colors hover:bg-raised"
-                >
-                  <HealthRing score={l.currentHealthScore} size={54} stroke={5} />
-                  <div className="min-w-0 flex-1">
-                    <p className="font-display text-body-md text-primary truncate">{l.model}</p>
-                    <p className="text-caption text-tertiary tabular-nums">
-                      {l.type} · {l.fleetCount} units · {l.availabilityPct}% availability
-                    </p>
-                    <div className="mt-1 flex items-center gap-2">
-                      <StatusBadge tone={l.status === "Active" ? "success" : "warning"}>
-                        {l.status === "Active" ? "Active" : "Maintenance"}
-                      </StatusBadge>
-                      <span className="text-caption text-quaternary font-mono-data tabular">
-                        Score: {l.currentHealthScore}/100
-                      </span>
-                    </div>
-                  </div>
-                  <Link
-                    href={l.status === "Active" ? "/simulation" : "/asset-health"}
-                    className="inline-flex h-7 items-center gap-1 rounded-full border border-muted bg-action px-2.5 text-caption text-secondary hover:border-default hover:bg-raised-2 hover:text-primary transition-colors shrink-0"
-                  >
-                    <span>{l.status === "Active" ? "Simulate" : "Health"}</span>
-                    <AppIcon name="arrowRight" size="xs" />
-                  </Link>
-                </div>
-              ))}
-            </div>
+            <FleetStatusList />
           </Panel>
         </SplitRow>
 
