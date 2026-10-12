@@ -1,43 +1,54 @@
-// Demo authentication only — accepts any email/password combination.
-// There is no real backend check; this exists purely to gate the UI behind
-// a login screen for demo purposes. Do not use this pattern in production.
+// Real backend authentication against TCO_Backend's /api/v1/auth routes.
+// Session (including the JWT pair) is cached client-side for convenience —
+// see src/lib/api/session.ts for why that's not the same as access control.
+import { ApiError, apiRequest } from "./api/client";
+import {
+  type AuthSession,
+  clearSession,
+  getRefreshToken,
+  getSession,
+  isAuthenticated,
+  saveSession,
+} from "./api/session";
 
-const STORAGE_KEY = "tco_auth_session";
+export type { AuthSession };
+export { getSession, isAuthenticated, ApiError };
 
-export type AuthSession = {
-  email: string;
-  loginAt: number;
+type AuthResult = {
+  accessToken: string;
+  refreshToken: string;
+  user: { id: string; email: string; organizationId: string; role: string };
 };
 
-export function getSession(): AuthSession | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as AuthSession;
-    if (!parsed?.email) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-export function isAuthenticated(): boolean {
-  return getSession() !== null;
-}
-
-// Demo login: any non-empty email + password is accepted.
-export function login(email: string, _password: string): AuthSession {
-  const session: AuthSession = { email, loginAt: Date.now() };
-  if (typeof window !== "undefined") {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
-    window.dispatchEvent(new Event("tco-auth-change"));
-  }
+export async function login(email: string, password: string): Promise<AuthSession> {
+  const data = await apiRequest<AuthResult>("/auth/login", {
+    method: "POST",
+    body: { email, password },
+    auth: false,
+  });
+  const session: AuthSession = {
+    email: data.user.email,
+    userId: data.user.id,
+    organizationId: data.user.organizationId,
+    role: data.user.role,
+    loginAt: Date.now(),
+    accessToken: data.accessToken,
+    refreshToken: data.refreshToken,
+  };
+  saveSession(session);
   return session;
 }
 
-export function logout(): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(STORAGE_KEY);
-  window.dispatchEvent(new Event("tco-auth-change"));
+export async function logout(): Promise<void> {
+  const refreshToken = getRefreshToken();
+  // Clear locally first so the UI reflects logout immediately regardless of
+  // whether the backend call below succeeds.
+  clearSession();
+  if (refreshToken) {
+    try {
+      await apiRequest("/auth/logout", { method: "POST", body: { refreshToken }, auth: false });
+    } catch {
+      // Best-effort: the local session is already gone either way.
+    }
+  }
 }
