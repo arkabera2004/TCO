@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { login } from "@/lib/auth";
+import { ApiError, login } from "@/lib/auth";
 import { AppIcon } from "@/components/icons/AppIcon";
 
 export default function LoginPage() {
@@ -13,21 +13,27 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
 
-    // Demo mode: any non-empty email + password is accepted — there is no
-    // real credential check. This app is a sales/demo tool, not a
-    // production system with real user accounts.
     if (!email.trim() || !password.trim()) {
-      setError("Enter any email and password to continue.");
+      setError("Enter your email and password.");
       return;
     }
 
     setSubmitting(true);
-    login(email.trim(), password);
-    router.push("/");
+    try {
+      await login(email.trim(), password);
+      router.push("/");
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Unable to reach the server. Check your connection and try again.",
+      );
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -106,14 +112,6 @@ export default function LoginPage() {
             {submitting ? "Signing in…" : "Sign in"}
           </button>
         </form>
-
-        <div className="mt-6 flex items-start gap-2.5 rounded-lg border border-muted bg-action p-3">
-          <AppIcon name="warrantyActive" size="sm" className="mt-0.5 shrink-0 text-teal" />
-          <p className="text-caption leading-relaxed text-secondary">
-            Demo mode — enter any email and password to explore the platform. No real account is
-            required.
-          </p>
-        </div>
       </div>
     </div>
   );

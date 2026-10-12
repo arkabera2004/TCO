@@ -122,7 +122,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [pathname]);
 
   function handleLogout() {
-    logout();
+    // logout() clears the local session synchronously before its best-effort
+    // backend call, so navigation doesn't need to wait on the network.
+    void logout();
     setNavOpen(false);
     router.push("/login");
   }
