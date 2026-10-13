@@ -34,6 +34,7 @@ import {
   listMaintenanceSchedules,
   listCostRecords,
   createMaintenanceSchedule,
+  updateMaintenanceSchedule,
   deleteMaintenanceSchedule,
   type BackendMaintenanceSchedule,
   type BackendCostRecord,
@@ -531,6 +532,7 @@ function LiveMaintenancePanel() {
   const [costRecords, setCostRecords] = useState<BackendCostRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<BackendMaintenanceSchedule | null>(null);
 
   const canWrite = getSession()?.role === "ADMIN" || getSession()?.role === "MANAGER";
   const canDelete = getSession()?.role === "ADMIN";
@@ -600,7 +602,10 @@ function LiveMaintenancePanel() {
           </select>
           {canWrite && (
             <button
-              onClick={() => setShowForm((v) => !v)}
+              onClick={() => {
+                setEditing(null);
+                setShowForm((v) => !v);
+              }}
               className="inline-flex h-7 items-center gap-1.5 rounded-full border border-muted bg-action px-3 text-label-sm text-secondary hover:border-default hover:text-primary"
             >
               <AppIcon name="add" size="xs" />
@@ -611,14 +616,19 @@ function LiveMaintenancePanel() {
       }
     >
       {error && <p className="mb-2 text-caption text-error">{error}</p>}
-      {showForm && activeLocoId && (
+      {(showForm || editing) && activeLocoId && (
         <ScheduleForm
           locomotiveId={activeLocoId}
+          editing={editing}
           onDone={() => {
             setShowForm(false);
+            setEditing(null);
             load(activeLocoId);
           }}
-          onCancel={() => setShowForm(false)}
+          onCancel={() => {
+            setShowForm(false);
+            setEditing(null);
+          }}
         />
       )}
       {schedules === null ? (
@@ -645,6 +655,17 @@ function LiveMaintenancePanel() {
                       <span className="font-mono-data text-caption text-secondary">
                         {fmtUSD(s.partsEstimate + s.laborHours * s.laborRatePerHour)}
                       </span>
+                      {canWrite && (
+                        <button
+                          onClick={() => {
+                            setShowForm(false);
+                            setEditing(s);
+                          }}
+                          className="text-caption text-quaternary hover:text-primary"
+                        >
+                          Edit
+                        </button>
+                      )}
                       {canDelete && (
                         <button
                           onClick={() => removeSchedule(s.id)}
@@ -691,14 +712,30 @@ function LiveMaintenancePanel() {
 
 function ScheduleForm({
   locomotiveId,
+  editing,
   onDone,
   onCancel,
 }: {
   locomotiveId: string;
+  editing?: BackendMaintenanceSchedule | null;
   onDone: () => void;
   onCancel: () => void;
 }) {
-  const [form, setForm] = useState<MaintenanceScheduleInput>(EMPTY_SCHEDULE_INPUT);
+  const [form, setForm] = useState<MaintenanceScheduleInput>(
+    editing
+      ? {
+          name: editing.name,
+          triggerMonths: editing.triggerMonths ?? undefined,
+          triggerKm: editing.triggerKm ?? undefined,
+          triggerHours: editing.triggerHours ?? undefined,
+          rule: editing.rule,
+          laborHours: editing.laborHours,
+          laborRatePerHour: editing.laborRatePerHour,
+          partsEstimate: editing.partsEstimate,
+          type: editing.type,
+        }
+      : EMPTY_SCHEDULE_INPUT,
+  );
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -712,10 +749,18 @@ function ScheduleForm({
     setSubmitting(true);
     setError(null);
     try {
-      await createMaintenanceSchedule(locomotiveId, form);
+      if (editing) {
+        await updateMaintenanceSchedule(editing.id, form);
+      } else {
+        await createMaintenanceSchedule(locomotiveId, form);
+      }
       onDone();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Couldn't create schedule.");
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : `Couldn't ${editing ? "update" : "create"} schedule.`,
+      );
     } finally {
       setSubmitting(false);
     }
@@ -788,7 +833,7 @@ function ScheduleForm({
           disabled={submitting}
           className="rounded-md bg-action-primary px-3 py-1.5 text-label-sm text-on-color disabled:opacity-50"
         >
-          Create schedule
+          {submitting ? "Saving…" : editing ? "Save changes" : "Create schedule"}
         </button>
         <button onClick={onCancel} className="text-label-sm text-tertiary">
           Cancel
