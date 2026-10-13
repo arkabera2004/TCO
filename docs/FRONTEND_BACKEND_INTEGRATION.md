@@ -317,6 +317,24 @@ browser profile without logging out first, and logout does clear the
 session correctly, as verified in earlier sessions). Final regression:
 lint PASS, typecheck PASS, 72/72 tests PASS, `next build` PASS.
 
+## 5e. Sixth increment — component rename, browser-verified live
+
+Added component rename (`PATCH /api/v1/components/:id`) to Live BOM: an
+inline "Edit" control per component row (ADMIN/MANAGER only), scoped to
+the `name` field only — matching the existing create form's minimal field
+set (engineering fields like MTBF/Weibull/warranty still default and are
+not yet editable; a full field-by-field editor is deferred until a real
+workflow needs it, not fabricated here).
+
+Browser-verified live: registered a seventh fresh test account (clearing
+`localStorage` first this time, per the §5d gotcha), seeded a locomotive →
+system → assembly → component via curl, logged in, switched to "Live
+Locomotive BOM," clicked "Edit" on the component, confirmed the inline
+input pre-filled with the real name, changed it, saved, then **reloaded
+the page and confirmed the new name persisted and the old name was gone**.
+Final regression: lint PASS, typecheck PASS, 72/72 tests PASS,
+`next build` PASS.
+
 ## 6. Feature → endpoint mapping (current state only)
 
 | Feature | Backend endpoint | Status |
@@ -326,7 +344,7 @@ lint PASS, typecheck PASS, 72/72 tests PASS, `next build` PASS.
 | Token refresh | `POST /api/v1/auth/refresh` | Connected, covered by unit tests (401→refresh→retry); not separately exercised live in-browser this session |
 | Dashboard "Fleet Status & Health" | `GET /api/v1/locomotives` | **Connected, verified live** |
 | Fleet Explorer (radial hierarchy) | `GET /api/v1/locomotives`, `GET /api/v1/locomotives/:id` | **Connected, verified live** (see §4a). RUL is a client-side estimate (`lifeYears - currentHours/8760`), not a backend-persisted figure. |
-| BOM — "Live Locomotive BOM" view | `GET /api/v1/locomotives/:id`, `POST .../systems`, `POST .../systems/:id/assemblies`, `POST/DELETE /api/v1/components`, `POST /api/v1/locomotives/:id/components` | **Connected, verified live** (see §4a) for System/Assembly/Component read + create, and Component delete. System/Assembly have **no edit or delete** — the backend doesn't expose those operations (only nested create + read via the locomotive tree), so none is built. Component create uses fleet-typical defaults for engineering fields (MTBF, Weibull β/η, warranty, labor %, downtime cost) rather than a full form — `PATCH /api/v1/components/:id` exists but has no edit UI yet. |
+| BOM — "Live Locomotive BOM" view | `GET /api/v1/locomotives/:id`, `POST .../systems`, `POST .../systems/:id/assemblies`, `POST/PATCH/DELETE /api/v1/components`, `POST /api/v1/locomotives/:id/components` | **Connected, verified live** (see §4a, §5e) for System/Assembly/Component read + create, Component delete, and Component rename. System/Assembly have **no edit or delete** — the backend doesn't expose those operations (only nested create + read via the locomotive tree), so none is built. Component create/edit only expose `name` — engineering fields (MTBF, Weibull β/η, warranty, labor %, downtime cost) default on create and are not yet editable. |
 | BOM — 5-Level Hierarchy Tree / Inventory & Criticality / Depreciation & Capital views | none — these operate on a `Part` sub-level (below Component) that **does not exist in the backend's Prisma schema** | **Static reference data, now labeled as such in the view switcher.** Not rewired — see §7. |
 | Scenarios — "Backend Scenario Library" | `GET/POST/PATCH/DELETE /api/v1/scenarios` | **Connected, verified live**, full CRUD including edit (see §5a, §5c). |
 | Scenarios — local comparator | none (local data + fabricated TCO formula) | **Static reference data, now labeled as such.** |
@@ -358,15 +376,18 @@ supports at the Component level and above.
 
 The original request specified 10 phases covering every route, full UI
 design-system stabilization, deployment reconciliation, and three
-documentation files. Five increments have now connected: auth + dashboard,
-Fleet Explorer + Live BOM, Scenarios (full CRUD)/TCO/Monte Carlo, and
-Maintenance (full CRUD) (see §6). Not done, in priority order — genuinely
-actionable items first, then backend-blocked items that are not frontend
-work at all:
+documentation files. Six increments have now connected: auth + dashboard,
+Fleet Explorer + Live BOM (full CRUD except system/assembly edit/delete,
+which the backend doesn't support), Scenarios (full CRUD)/TCO/Monte Carlo,
+and Maintenance (full CRUD) (see §6). Not done, in priority order —
+genuinely actionable items first, then backend-blocked items that are not
+frontend work at all:
 
-1. Component edit UI (`PATCH /api/v1/components/:id`) in Live BOM —
-   endpoint exists, only create/delete are wired. Same small pattern as
-   scenario/schedule edit (§5c, §5d) would apply.
+1. Component full field editing in Live BOM — only `name` is
+   create/editable; MTBF, Weibull β/η, warranty, labor %, downtime cost
+   default on create and have no edit UI (§5e). Not attempted because no
+   workflow has asked for it yet, not because it's hard — `updateComponent`
+   already accepts a `Partial<ComponentInput>`.
 2. TCO/simulation run history UI (`GET /locomotives/:id/tco-runs`,
    `GET /locomotives/:id/simulation-runs`) — API modules exist, no UI.
 3. Cross-organization isolation browser verification (two genuinely
@@ -423,10 +444,12 @@ e0cf8cf docs(frontend): record maintenance session, backend-scope audit, remote 
 307eac4 feat(scenarios): add scenario editing (PATCH /scenarios/:id)
 a9f6493 docs(frontend): record scenario-edit verification, close remaining-work item
 9c2a1aa feat(maintenance): add schedule editing (PATCH /maintenance-schedules/:id)
+ff3a811 docs(frontend): record maintenance-schedule-edit verification
+00cd7f4 feat(bom): add component rename (PATCH /api/v1/components/:id)
 ```
 
-(This document's own update commit for the maintenance-schedule-edit
-increment follows this one in the log, committed after this edit.)
+(This document's own update commit for the component-rename increment
+follows this one in the log, committed after this edit.)
 
 All committed individually to `design-system-retrofit` and pushed to
 `origin` after each commit, no squashing, no force-push, no backend-repo
