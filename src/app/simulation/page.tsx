@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AreaChart,
   Area,
@@ -45,6 +45,10 @@ import { usePartsStore } from "@/store/partsStore";
 import { partTCO, fleetTCO, eventPartsCost, formatInterval } from "@/utils/tcoEngine";
 import { fmtCompact, fmtUSD } from "@/utils/formatters";
 import { cn } from "@/lib/utils";
+import { useLocomotives } from "@/hooks/use-locomotives";
+import { createTcoRun, type BackendTcoRun } from "@/lib/api/tco";
+import { listScenarios, type BackendScenario } from "@/lib/api/scenarios";
+import { ApiError } from "@/lib/api/client";
 
 const TABS = [
   "Cumulative TCO",
@@ -73,7 +77,7 @@ export default function SimulationPlayground() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <PageHeader
         title="TCO Simulation Playground"
-        description="Interactive parametric lifecycle cost modeling with Weibull reliability curves, downtime costs, and operator vs manufacturer risk allocation."
+        description="Interactive parametric lifecycle cost modeling (local preview, not persisted) with Weibull reliability curves, downtime costs, and operator vs manufacturer risk allocation. Run the backend's canonical calculation below to get a persisted result."
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -488,8 +492,134 @@ export default function SimulationPlayground() {
             <MaintenanceAnalytics />
           </div>
         </div>
+
+        <BackendTcoRunPanel />
       </PageBody>
     </div>
+  );
+}
+
+/* ────────────────────────── BACKEND TCO RUN (real backend) ────────────────────────── */
+
+function BackendTcoRunPanel() {
+  const locomotives = useLocomotives();
+  const [locoId, setLocoId] = useState<string | null>(null);
+  const activeLocoId =
+    locoId ?? (locomotives.status === "success" ? (locomotives.data[0]?.id ?? null) : null);
+
+  const [scenarios, setScenarios] = useState<BackendScenario[]>([]);
+  const [scenarioId, setScenarioId] = useState<string>("");
+  const [horizonYears, setHorizonYears] = useState(20);
+
+  const [run, setRun] = useState<BackendTcoRun | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    listScenarios()
+      .then(setScenarios)
+      .catch(() => {
+        /* scenario picker is optional; silently fall back to horizonYears-only */
+      });
+  }, []);
+
+  const submit = async () => {
+    if (!activeLocoId) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const result = await createTcoRun({
+        locomotiveId: activeLocoId,
+        horizonYears,
+        scenarioId: scenarioId || undefined,
+      });
+      setRun(result);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "TCO calculation failed.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Panel
+      title="Backend TCO Calculation"
+      action={
+        <span className="text-caption text-quaternary">
+          Canonical result from POST /tco/runs — not the slider preview above
+        </span>
+      }
+    >
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-caption text-quaternary">
+          Locomotive
+          <select
+            value={activeLocoId ?? ""}
+            onChange={(e) => setLocoId(e.target.value)}
+            className={cn(
+              "mt-1 block h-8 rounded-md border border-muted bg-action px-2 text-body-sm text-primary",
+            )}
+          >
+            {locomotives.status === "success" &&
+              locomotives.data.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.model}
+                </option>
+              ))}
+          </select>
+        </label>
+        <label className="text-caption text-quaternary">
+          Scenario (optional)
+          <select
+            value={scenarioId}
+            onChange={(e) => setScenarioId(e.target.value)}
+            className={cn(
+              "mt-1 block h-8 rounded-md border border-muted bg-action px-2 text-body-sm text-primary",
+            )}
+          >
+            <option value="">None — use horizon below</option>
+            {scenarios.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-caption text-quaternary">
+          Horizon (yr)
+          <input
+            type="number"
+            value={horizonYears}
+            onChange={(e) => setHorizonYears(Number(e.target.value))}
+            className="mt-1 block h-8 w-20 rounded-md border border-muted bg-action px-2 text-body-sm text-primary"
+          />
+        </label>
+        <button
+          onClick={submit}
+          disabled={submitting || !activeLocoId}
+          className="h-8 rounded-md bg-action-primary px-3 text-label-sm text-on-color disabled:opacity-50"
+        >
+          {submitting ? "Calculating…" : "Run TCO calculation"}
+        </button>
+      </div>
+      {error && <p className="mt-2 text-caption text-error">{error}</p>}
+      {run && (
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <KpiTile label="Total Cost" value={fmtUSD(run.outputs.totalCost)} tone="neutral" />
+          <KpiTile label="Customer TCO" value={fmtUSD(run.outputs.customerTCO)} tone="warning" />
+          <KpiTile
+            label="Organization TCO"
+            value={fmtUSD(run.outputs.organizationTCO)}
+            tone="info"
+          />
+          <KpiTile
+            label="Avg Annual Cost"
+            value={fmtUSD(run.outputs.avgAnnualCost)}
+            tone="neutral"
+          />
+        </div>
+      )}
+    </Panel>
   );
 }
 
