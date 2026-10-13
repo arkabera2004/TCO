@@ -2,20 +2,15 @@
 
 import { useMemo, useState } from "react";
 import { PageHeader, PageBody } from "@/components/layout/page-header";
-import { Panel, SplitRow, KpiTile, StatusBadge, EmptyState } from "@/components/ui/primitives";
+import { Panel, SplitRow, KpiTile, EmptyState } from "@/components/ui/primitives";
 import { FilterChips } from "@/components/ui/data-table";
-import {
-  LOCOMOTIVES,
-  SYSTEMS,
-  ASSEMBLIES,
-  COMPONENTS,
-  healthColor,
-  CHART_COLORS,
-  type Component,
-} from "@/data/syntheticData";
+import { CHART_COLORS, healthColor } from "@/data/syntheticData";
 import { weibullReliability } from "@/utils/simulationEngine";
 import { fmtUSD, fmtCompact } from "@/utils/formatters";
 import { AppIcon } from "@/components/icons/AppIcon";
+import { useLocomotives } from "@/hooks/use-locomotives";
+import { useLocomotive } from "@/hooks/use-locomotive";
+import type { BackendAssembly, BackendComponent, BackendSystemNode } from "@/lib/api/locomotives";
 
 type NodeKind = "loco" | "system" | "assembly" | "component";
 
@@ -28,16 +23,24 @@ interface RadialNode {
   color: string;
   dim: boolean;
   parentId?: string;
-  component?: Component;
+  component?: BackendComponent;
 }
 
-function buildRadial(locoId: string, search: string): RadialNode[] {
-  const loco = LOCOMOTIVES.find((l) => l.id === locoId)!;
-  const systems = SYSTEMS.filter((s) => s.locomotiveId === locoId);
+function assemblyHealth(assembly: BackendAssembly): number {
+  if (assembly.components.length === 0) return 100;
+  return assembly.components.reduce((s, c) => s + c.healthScore, 0) / assembly.components.length;
+}
+
+function buildRadial(
+  locoId: string,
+  locoName: string,
+  systems: BackendSystemNode[],
+  search: string,
+): RadialNode[] {
   const nodes: RadialNode[] = [
     {
-      id: loco.id,
-      name: loco.model,
+      id: locoId,
+      name: locoName,
       kind: "loco",
       ring: 0,
       angle: 0,
@@ -60,10 +63,10 @@ function buildRadial(locoId: string, search: string): RadialNode[] {
       angle: sysStart + sectorPer / 2,
       color: healthColor(s.healthScore),
       dim: !matches(s.name),
-      parentId: loco.id,
+      parentId: locoId,
     });
 
-    const asms = ASSEMBLIES.filter((a) => a.systemId === s.id);
+    const asms = s.assemblies;
     const asmPer = sectorPer / Math.max(1, asms.length);
 
     asms.forEach((a, ai) => {
@@ -74,12 +77,12 @@ function buildRadial(locoId: string, search: string): RadialNode[] {
         kind: "assembly",
         ring: 2,
         angle: asmStart + asmPer / 2,
-        color: CHART_COLORS.textSecondary,
+        color: healthColor(assemblyHealth(a)),
         dim: !matches(a.name),
         parentId: s.id,
       });
 
-      const comps = COMPONENTS.filter((c) => c.assemblyId === a.id);
+      const comps = a.components;
       const cmpPer = asmPer / Math.max(1, comps.length);
 
       comps.forEach((c, ci) => {
@@ -109,23 +112,63 @@ function polar(cx: number, cy: number, r: number, deg: number) {
 const RING_R = [0, 70, 130, 195];
 
 export default function FleetExplorer() {
-  const [locoId, setLocoId] = useState("loco-001");
+  const locomotives = useLocomotives();
+  const [locoId, setLocoId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>("cmp-005");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const nodes = useMemo(() => buildRadial(locoId, search), [locoId, search]);
+  const activeLocoId =
+    locoId ?? (locomotives.status === "success" ? (locomotives.data[0]?.id ?? null) : null);
+  const detail = useLocomotive(activeLocoId);
+
+  const nodes = useMemo(() => {
+    if (detail.status !== "success") return [];
+    return buildRadial(detail.data.id, detail.data.model, detail.data.systems, search);
+  }, [detail, search]);
+
+  const allComponents = useMemo(
+    () => nodes.filter((n) => n.component).map((n) => n.component!),
+    [nodes],
+  );
+
   const selected = nodes.find((n) => n.id === selectedId);
-  const selectedComp = selected?.component ?? COMPONENTS.find((c) => c.id === selectedId);
+  const selectedComp = selected?.component;
 
   const size = 440;
   const cx = size / 2;
   const cy = size / 2;
 
-  const locoOptions = LOCOMOTIVES.map((l) => ({
-    id: l.id,
-    label: l.model.split(" ")[0],
-    count: l.fleetCount,
-  }));
+  const locoOptions =
+    locomotives.status === "success"
+      ? locomotives.data.map((l) => ({ id: l.id, label: l.model }))
+      : [];
+
+  if (locomotives.status === "loading") {
+    return (
+      <div className="flex h-full min-h-[300px] items-center justify-center">
+        <p className="text-body-sm text-tertiary">Loading fleet…</p>
+      </div>
+    );
+  }
+
+  if (locomotives.status === "error") {
+    return (
+      <EmptyState
+        title="Couldn't load the fleet"
+        detail={locomotives.error}
+        mark={<AppIcon name="warrantyActive" size="lg" className="text-quaternary" />}
+      />
+    );
+  }
+
+  if (locomotives.data.length === 0) {
+    return (
+      <EmptyState
+        title="No locomotives yet"
+        detail="Add a locomotive to your fleet to explore its hierarchy here."
+      />
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -136,7 +179,7 @@ export default function FleetExplorer() {
           <div className="flex items-center gap-2">
             <FilterChips
               options={locoOptions}
-              value={locoId}
+              value={activeLocoId ?? ""}
               onChange={(id) => {
                 setLocoId(id);
                 setSelectedId(null);
@@ -162,136 +205,149 @@ export default function FleetExplorer() {
               </div>
             }
           >
-            <div className="flex flex-col items-center justify-center p-2">
-              <svg viewBox={`0 0 ${size} ${size}`} className="max-h-[380px] w-full">
-                {/* Ring guides */}
-                {RING_R.slice(1).map((r) => (
-                  <circle
-                    key={r}
-                    cx={cx}
-                    cy={cy}
-                    r={r}
-                    fill="none"
-                    stroke={CHART_COLORS.grid}
-                    strokeDasharray="2 4"
-                  />
-                ))}
-                {/* Structural links */}
-                {nodes
-                  .filter((n) => n.parentId)
-                  .map((n) => {
-                    const parent = nodes.find((p) => p.id === n.parentId);
-                    if (!parent) return null;
-                    const p1 = polar(cx, cy, RING_R[parent.ring], parent.angle);
-                    const p2 = polar(cx, cy, RING_R[n.ring], n.angle);
+            {detail.status === "loading" && (
+              <div className="flex h-[380px] items-center justify-center">
+                <p className="text-body-sm text-tertiary">Loading hierarchy…</p>
+              </div>
+            )}
+            {detail.status === "error" && (
+              <EmptyState
+                title={detail.notFound ? "Locomotive not found" : "Couldn't load the hierarchy"}
+                detail={detail.error}
+              />
+            )}
+            {detail.status === "success" && (
+              <div className="flex flex-col items-center justify-center p-2">
+                <svg viewBox={`0 0 ${size} ${size}`} className="max-h-[380px] w-full">
+                  {/* Ring guides */}
+                  {RING_R.slice(1).map((r) => (
+                    <circle
+                      key={r}
+                      cx={cx}
+                      cy={cy}
+                      r={r}
+                      fill="none"
+                      stroke={CHART_COLORS.grid}
+                      strokeDasharray="2 4"
+                    />
+                  ))}
+                  {/* Structural links */}
+                  {nodes
+                    .filter((n) => n.parentId)
+                    .map((n) => {
+                      const parent = nodes.find((p) => p.id === n.parentId);
+                      if (!parent) return null;
+                      const p1 = polar(cx, cy, RING_R[parent.ring], parent.angle);
+                      const p2 = polar(cx, cy, RING_R[n.ring], n.angle);
+                      return (
+                        <line
+                          key={`link-${n.id}`}
+                          x1={p1.x}
+                          y1={p1.y}
+                          x2={p2.x}
+                          y2={p2.y}
+                          stroke={CHART_COLORS.grid}
+                          strokeWidth={1}
+                        />
+                      );
+                    })}
+                  {/* Nodes */}
+                  {nodes.map((n) => {
+                    const pos = polar(cx, cy, RING_R[n.ring], n.angle);
+                    const rNode = n.ring === 0 ? 22 : n.ring === 1 ? 10 : n.ring === 2 ? 6 : 8;
+                    const isSel = n.id === selectedId;
                     return (
-                      <line
-                        key={`link-${n.id}`}
-                        x1={p1.x}
-                        y1={p1.y}
-                        x2={p2.x}
-                        y2={p2.y}
-                        stroke={CHART_COLORS.grid}
-                        strokeWidth={1}
-                      />
-                    );
-                  })}
-                {/* Nodes */}
-                {nodes.map((n) => {
-                  const pos = polar(cx, cy, RING_R[n.ring], n.angle);
-                  const rNode = n.ring === 0 ? 22 : n.ring === 1 ? 10 : n.ring === 2 ? 6 : 8;
-                  const isSel = n.id === selectedId;
-                  return (
-                    <g
-                      key={n.id}
-                      className="cursor-pointer"
-                      onClick={() => setSelectedId(n.id)}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={n.name}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          setSelectedId(n.id);
-                        }
-                      }}
-                    >
-                      <circle
-                        cx={pos.x}
-                        cy={pos.y}
-                        r={Math.max(rNode + 7, 13)}
-                        fill="transparent"
-                      />
-                      {isSel && (
+                      <g
+                        key={n.id}
+                        className="cursor-pointer"
+                        onClick={() => setSelectedId(n.id)}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={n.name}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setSelectedId(n.id);
+                          }
+                        }}
+                      >
                         <circle
                           cx={pos.x}
                           cy={pos.y}
-                          r={rNode + 5}
-                          fill="none"
-                          stroke={CHART_COLORS.blue}
-                          strokeWidth={2}
-                          opacity={0.8}
+                          r={Math.max(rNode + 7, 13)}
+                          fill="transparent"
                         />
-                      )}
-                      <circle
-                        cx={pos.x}
-                        cy={pos.y}
-                        r={rNode}
-                        fill={n.color}
-                        opacity={n.dim ? 0.25 : n.ring === 2 ? 0.6 : 0.95}
-                        style={{ transition: "all 0.2s" }}
-                        className="pointer-events-none"
-                      />
-                      {n.ring === 0 && (
-                        <text
-                          x={pos.x}
-                          y={pos.y + 3}
-                          textAnchor="middle"
-                          fontSize={9}
-                          fill="var(--ref-black)"
-                          fontWeight={700}
-                          className="pointer-events-none font-display"
-                        >
-                          {n.name.split(" ")[0]}
-                        </text>
-                      )}
-                      <title>{n.name}</title>
-                    </g>
-                  );
-                })}
-              </svg>
-              <div className="mt-3 flex flex-wrap items-center justify-center gap-4 text-caption text-secondary border-t border-muted pt-3 w-full">
-                <span className="flex items-center gap-1.5">
-                  <span className="size-2 rounded-full bg-success" />
-                  Health ≥85
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="size-2 rounded-full bg-yellow" />
-                  70–84
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="size-2 rounded-full bg-warning" />
-                  55–69
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="size-2 rounded-full bg-error" />
-                  &lt;55
-                </span>
+                        {isSel && (
+                          <circle
+                            cx={pos.x}
+                            cy={pos.y}
+                            r={rNode + 5}
+                            fill="none"
+                            stroke={CHART_COLORS.blue}
+                            strokeWidth={2}
+                            opacity={0.8}
+                          />
+                        )}
+                        <circle
+                          cx={pos.x}
+                          cy={pos.y}
+                          r={rNode}
+                          fill={n.color}
+                          opacity={n.dim ? 0.25 : n.ring === 2 ? 0.6 : 0.95}
+                          style={{ transition: "all 0.2s" }}
+                          className="pointer-events-none"
+                        />
+                        {n.ring === 0 && (
+                          <text
+                            x={pos.x}
+                            y={pos.y + 3}
+                            textAnchor="middle"
+                            fontSize={9}
+                            fill="var(--ref-black)"
+                            fontWeight={700}
+                            className="pointer-events-none font-display"
+                          >
+                            {n.name.split(" ")[0]}
+                          </text>
+                        )}
+                        <title>{n.name}</title>
+                      </g>
+                    );
+                  })}
+                </svg>
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-4 text-caption text-secondary border-t border-muted pt-3 w-full">
+                  <span className="flex items-center gap-1.5">
+                    <span className="size-2 rounded-full bg-success" />
+                    Health ≥85
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="size-2 rounded-full bg-yellow" />
+                    70–84
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="size-2 rounded-full bg-warning" />
+                    55–69
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="size-2 rounded-full bg-error" />
+                    &lt;55
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
           </Panel>
 
           {/* Node Detail Inspector */}
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
             {selectedComp ? (
-              <ComponentDetail comp={selectedComp} />
+              <ComponentDetail comp={selectedComp} allComponents={allComponents} />
             ) : selected ? (
-              <GroupDetail node={selected} onSelect={setSelectedId} />
+              <GroupDetail node={selected} nodes={nodes} onSelect={setSelectedId} />
             ) : (
               <Panel title="Node Inspector">
                 <EmptyState
                   title="Select any node on the radial tree"
-                  detail="Inspect system aggregates, component Weibull reliability curves, RUL and cost breakdowns."
+                  detail="Inspect system aggregates, component Weibull reliability curves and cost breakdowns."
                 />
               </Panel>
             )}
@@ -302,17 +358,24 @@ export default function FleetExplorer() {
   );
 }
 
-function GroupDetail({ node, onSelect }: { node: RadialNode; onSelect: (id: string) => void }) {
+function GroupDetail({
+  node,
+  nodes,
+  onSelect,
+}: {
+  node: RadialNode;
+  nodes: RadialNode[];
+  onSelect: (id: string) => void;
+}) {
   const comps = useMemo(() => {
-    if (node.kind === "assembly") return COMPONENTS.filter((c) => c.assemblyId === node.id);
-    if (node.kind === "system") {
-      const asmIds = ASSEMBLIES.filter((a) => a.systemId === node.id).map((a) => a.id);
-      return COMPONENTS.filter((c) => asmIds.includes(c.assemblyId));
+    function descendantComponents(id: string): BackendComponent[] {
+      const children = nodes.filter((n) => n.parentId === id);
+      const direct = children.filter((n) => n.component).map((n) => n.component!);
+      const nested = children.flatMap((n) => descendantComponents(n.id));
+      return [...direct, ...nested];
     }
-    const sysIds = SYSTEMS.filter((s) => s.locomotiveId === node.id).map((s) => s.id);
-    const asmIds = ASSEMBLIES.filter((a) => sysIds.includes(a.systemId)).map((a) => a.id);
-    return COMPONENTS.filter((c) => asmIds.includes(c.assemblyId));
-  }, [node]);
+    return descendantComponents(node.id);
+  }, [node, nodes]);
 
   const replacementValue = comps.reduce((s, c) => s + c.replacementCost, 0);
   const avgHealth = comps.length ? comps.reduce((s, c) => s + c.healthScore, 0) / comps.length : 0;
@@ -361,7 +424,7 @@ function GroupDetail({ node, onSelect }: { node: RadialNode; onSelect: (id: stri
               />
               <span className="flex-1 truncate text-primary">{c.name}</span>
               <span className="font-mono-data text-caption text-secondary tabular">
-                {c.healthScore}%
+                {c.healthScore.toFixed(0)}%
               </span>
               <span className="font-mono-data text-right text-caption text-quaternary tabular">
                 {fmtCompact(c.replacementCost)}
@@ -389,7 +452,7 @@ function GroupDetail({ node, onSelect }: { node: RadialNode; onSelect: (id: stri
                       className="font-mono-data tabular"
                       style={{ color: healthColor(c.healthScore) }}
                     >
-                      {c.healthScore}%
+                      {c.healthScore.toFixed(0)}%
                     </span>
                   </div>
                   <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-raised-2">
@@ -408,34 +471,40 @@ function GroupDetail({ node, onSelect }: { node: RadialNode; onSelect: (id: stri
   );
 }
 
-function ComponentDetail({ comp }: { comp: Component }) {
+function ComponentDetail({
+  comp,
+  allComponents,
+}: {
+  comp: BackendComponent;
+  allComponents: BackendComponent[];
+}) {
   const reliability =
     weibullReliability(comp.currentHours, comp.weibullBeta, comp.weibullEta) * 100;
-  const rulPct = Math.min(100, (comp.rulYears / comp.lifeYears) * 100);
-  const affected = comp.affectsIfFails
-    .map((id) => COMPONENTS.find((c) => c.id === id)?.name)
+  // No backend-provided RUL — approximate remaining life from design life vs.
+  // elapsed hours (8760h/yr) since the backend doesn't persist this figure.
+  const rulYears = Math.max(0, comp.lifeYears - comp.currentHours / 8760);
+  const rulPct = comp.lifeYears > 0 ? Math.min(100, (rulYears / comp.lifeYears) * 100) : 0;
+
+  const dependsOnIds = comp.dependsOn?.map((d) => d.dependsOnComponentId) ?? [];
+  const dependsOn = dependsOnIds
+    .map((id) => allComponents.find((c) => c.id === id)?.name)
     .filter(Boolean);
-  const dependsOn = comp.dependsOn
-    .map((id) => COMPONENTS.find((c) => c.id === id)?.name)
-    .filter(Boolean);
+  const affected = allComponents
+    .filter((c) => c.dependsOn?.some((d) => d.dependsOnComponentId === comp.id))
+    .map((c) => c.name);
 
   const triggers = [
     {
       label: "Calendar Trigger",
-      value: comp.pmTrigger.intervalMonths ? `${comp.pmTrigger.intervalMonths} months` : "—",
-      pct: 62,
+      value: comp.pmTriggerMonths ? `${comp.pmTriggerMonths} months` : "—",
     },
     {
       label: "Distance Interval",
-      value: comp.pmTrigger.intervalKm ? `${comp.pmTrigger.intervalKm.toLocaleString()} km` : "—",
-      pct: 48,
+      value: comp.pmTriggerKm ? `${comp.pmTriggerKm.toLocaleString()} km` : "—",
     },
     {
       label: "Operating Hours",
-      value: comp.pmTrigger.intervalHours
-        ? `${comp.pmTrigger.intervalHours.toLocaleString()} hrs`
-        : "—",
-      pct: 74,
+      value: comp.pmTriggerHours ? `${comp.pmTriggerHours.toLocaleString()} hrs` : "—",
     },
   ];
 
@@ -454,7 +523,7 @@ function ComponentDetail({ comp }: { comp: Component }) {
               color: healthColor(comp.healthScore),
             }}
           >
-            Health {comp.healthScore}%
+            Health {comp.healthScore.toFixed(0)}%
           </span>
         }
       >
@@ -522,10 +591,10 @@ function ComponentDetail({ comp }: { comp: Component }) {
           <div className="mt-4 border-t border-muted pt-3">
             <div className="flex justify-between text-caption mb-1">
               <span className="text-quaternary uppercase tracking-[0.08em]">
-                Remaining Useful Life
+                Remaining Useful Life (est.)
               </span>
               <span className="font-mono-data text-secondary tabular">
-                {comp.rulYears} yrs ({rulPct.toFixed(0)}%)
+                {rulYears.toFixed(1)} yrs ({rulPct.toFixed(0)}%)
               </span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-raised-2">
@@ -539,7 +608,7 @@ function ComponentDetail({ comp }: { comp: Component }) {
               />
             </div>
             <p className="font-mono-data text-caption text-quaternary mt-1.5">
-              Confidence level: {comp.rulConfidence}% · based on fleet degradation model
+              Estimated from design life vs. elapsed operating hours
             </p>
           </div>
         </Panel>
@@ -551,19 +620,9 @@ function ComponentDetail({ comp }: { comp: Component }) {
               Maintenance Triggers (whichever first)
             </h4>
             {triggers.map((t) => (
-              <div key={t.label}>
-                <div className="flex justify-between text-body-sm">
-                  <span className="text-secondary">{t.label}</span>
-                  <span className="font-mono-data tabular text-primary">{t.value}</span>
-                </div>
-                {t.value !== "—" && (
-                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-raised-2">
-                    <div
-                      className="h-full rounded-full bg-action-primary"
-                      style={{ width: `${t.pct}%` }}
-                    />
-                  </div>
-                )}
+              <div key={t.label} className="flex justify-between text-body-sm">
+                <span className="text-secondary">{t.label}</span>
+                <span className="font-mono-data tabular text-primary">{t.value}</span>
               </div>
             ))}
           </div>
