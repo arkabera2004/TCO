@@ -335,6 +335,35 @@ the page and confirmed the new name persisted and the old name was gone**.
 Final regression: lint PASS, typecheck PASS, 72/72 tests PASS,
 `next build` PASS.
 
+## 5f. Seventh increment — TCO/simulation run history, browser-verified live
+
+Added persisted run history to both `/simulation`'s "Backend TCO
+Calculation" panel (`GET /locomotives/:id/tco-runs`) and `/monte-carlo`
+(`GET /locomotives/:id/simulation-runs`). Each lists a locomotive's past
+runs below the result display; clicking one loads its real outputs into
+the same KPI/chart display a fresh submission uses — a past result and a
+new one render identically except by which history row is highlighted.
+History reloads when the locomotive changes or a new run is submitted.
+
+Browser-verified live: registered an eighth fresh test account, seeded a
+locomotive + component, then seeded **2 TCO runs (10yr/20yr horizons) and
+1 simulation run (500 iterations)** directly via curl so the history had
+real, distinguishable rows to click. On `/simulation`: confirmed both rows
+rendered with correct timestamps and totals ($28,800 for 20yr, $14,400 for
+10yr), clicked the 10yr row, confirmed the KPI tiles switched to show
+exactly $14,400 (not the 20yr figure). On `/monte-carlo`: confirmed the
+history panel rendered "1 persisted run," clicked it, confirmed the page
+header updated to show the real seed (`516ad75c...`) and 500 iterations —
+matching the curl-seeded run exactly, not a different one.
+
+One environment note: the history panel rendered correctly in the DOM
+(`getBoundingClientRect` confirmed real layout and position) but was
+positioned below the automation tool's effective scroll range in this
+session, same as a scroll quirk seen in an earlier increment — not a
+product bug, confirmed by reading `textContent` and clicking the element
+directly via its DOM reference rather than relying on a screenshot. Final
+regression: lint PASS, typecheck PASS, 72/72 tests PASS, `next build` PASS.
+
 ## 6. Feature → endpoint mapping (current state only)
 
 | Feature | Backend endpoint | Status |
@@ -348,9 +377,9 @@ Final regression: lint PASS, typecheck PASS, 72/72 tests PASS,
 | BOM — 5-Level Hierarchy Tree / Inventory & Criticality / Depreciation & Capital views | none — these operate on a `Part` sub-level (below Component) that **does not exist in the backend's Prisma schema** | **Static reference data, now labeled as such in the view switcher.** Not rewired — see §7. |
 | Scenarios — "Backend Scenario Library" | `GET/POST/PATCH/DELETE /api/v1/scenarios` | **Connected, verified live**, full CRUD including edit (see §5a, §5c). |
 | Scenarios — local comparator | none (local data + fabricated TCO formula) | **Static reference data, now labeled as such.** |
-| TCO — "Backend TCO Calculation" panel | `POST /api/v1/tco/runs` | **Connected, verified live** (see §5a). History list (`GET /locomotives/:id/tco-runs`) has an API module but no UI yet. |
+| TCO — "Backend TCO Calculation" panel | `POST /api/v1/tco/runs`, `GET /locomotives/:id/tco-runs` | **Connected, verified live**, including persisted run history (§5a, §5f). |
 | TCO — local slider playground | none (local `runTCOSimulation` engine) | **Local preview, now labeled as such.** Intentionally kept distinct from the backend engine per `TCO_ENGINE_SPECIFICATION.md`. |
-| Monte Carlo | `POST /api/v1/simulation-runs` | **Connected, verified live** (see §5a), including a real bug found and fixed during verification. History list has an API module but no UI yet. Variance-driver and input-distribution panels stay static/illustrative — no backend equivalent. |
+| Monte Carlo | `POST /api/v1/simulation-runs`, `GET /locomotives/:id/simulation-runs` | **Connected, verified live**, including persisted run history (§5a, §5f) and a real bug found and fixed during §5a's verification. Variance-driver and input-distribution panels stay static/illustrative — no backend equivalent. |
 | Maintenance — "Live Maintenance & Cost Ledger" panel | `GET/POST/PATCH/DELETE .../maintenance-schedules`, `GET/POST .../cost-records` | **Connected, verified live**, full CRUD including edit (see §5b, §5d), including role-gating verified with a real VIEWER account. Cost records are append-only by backend design — no edit/delete exists or is built. |
 | Maintenance — Part-level visit planner | none (local engine, same pattern as BOM's Part level) | **Static reference data, now labeled as such.** |
 | Reliability, Asset Health, Benchmark, Forecasting, Tender, Integrations, Sustainability, Configuration (Product Taxonomy / Maintenance Rules / Standards Compliance tabs) | **none — no backend module exists for any of these** (confirmed by listing `TCO_Backend/src/modules`: only `assets, auth, costs, fleets, health, organizations, scenarios, simulation, tco, users`) | **Blocked by backend — not a frontend gap.** Still synthetic/local; wiring them would require fabricating endpoints, which is out of scope by the integration mandate itself. |
@@ -376,38 +405,36 @@ supports at the Component level and above.
 
 The original request specified 10 phases covering every route, full UI
 design-system stabilization, deployment reconciliation, and three
-documentation files. Six increments have now connected: auth + dashboard,
-Fleet Explorer + Live BOM (full CRUD except system/assembly edit/delete,
-which the backend doesn't support), Scenarios (full CRUD)/TCO/Monte Carlo,
-and Maintenance (full CRUD) (see §6). Not done, in priority order —
-genuinely actionable items first, then backend-blocked items that are not
-frontend work at all:
+documentation files. Seven increments have now connected: auth +
+dashboard, Fleet Explorer + Live BOM (full CRUD except system/assembly
+edit/delete, which the backend doesn't support), Scenarios (full
+CRUD)/TCO/Monte Carlo with persisted run history, and Maintenance (full
+CRUD) (see §6). Not done, in priority order — genuinely actionable items
+first, then backend-blocked items that are not frontend work at all:
 
 1. Component full field editing in Live BOM — only `name` is
    create/editable; MTBF, Weibull β/η, warranty, labor %, downtime cost
    default on create and have no edit UI (§5e). Not attempted because no
    workflow has asked for it yet, not because it's hard — `updateComponent`
    already accepts a `Partial<ComponentInput>`.
-2. TCO/simulation run history UI (`GET /locomotives/:id/tco-runs`,
-   `GET /locomotives/:id/simulation-runs`) — API modules exist, no UI.
-3. Cross-organization isolation browser verification (two genuinely
+2. Cross-organization isolation browser verification (two genuinely
    separate organizations, not just two users in one org) — not exercised
    in any session so far, only org-scoping via unit tests and the
    backend's own `findFirst({organizationId})` pattern (read in source,
    not independently black-box tested).
-4. 403 role-gating verification for TCO and component-create specifically
+3. 403 role-gating verification for TCO and component-create specifically
    (BOM system/assembly creation, Scenarios create+edit+delete, and
    Maintenance create+edit+delete were verified live with a real VIEWER
    account — see §5b, §5d).
-5. Typography/spacing/theme/logo/responsive UI pass (Phase 1 of the
-   original request) — not started in these five increments; a prior,
+4. Typography/spacing/theme/logo/responsive UI pass (Phase 1 of the
+   original request) — not started in these seven increments; a prior,
    separate stabilization pass exists in `docs/FRONTEND_STABILIZATION.md`
    but predates the fleet-explorer/bom/scenarios/tco/maintenance changes
    and should be re-run against them.
-6. A decision on whether to build a team/org-settings screen for the
+5. A decision on whether to build a team/org-settings screen for the
    backend's unused `organizations`/`users` modules (§5b) — product
    decision, not started.
-7. Production deployment verification — not investigated; the backend's
+6. Production deployment verification — not investigated; the backend's
    own prior audit notes `tco.wayam.ai` was last observed serving an
    older Vite build, unrelated to this Next.js repo.
 
@@ -446,10 +473,12 @@ a9f6493 docs(frontend): record scenario-edit verification, close remaining-work 
 9c2a1aa feat(maintenance): add schedule editing (PATCH /maintenance-schedules/:id)
 ff3a811 docs(frontend): record maintenance-schedule-edit verification
 00cd7f4 feat(bom): add component rename (PATCH /api/v1/components/:id)
+42ca386 docs(frontend): record component-rename verification
+92d66e7 feat(tco,monte-carlo): add persisted run history UI
 ```
 
-(This document's own update commit for the component-rename increment
-follows this one in the log, committed after this edit.)
+(This document's own update commit for the run-history increment follows
+this one in the log, committed after this edit.)
 
 All committed individually to `design-system-retrofit` and pushed to
 `origin` after each commit, no squashing, no force-push, no backend-repo
