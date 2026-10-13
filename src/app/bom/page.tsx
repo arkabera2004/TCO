@@ -50,9 +50,10 @@ import { useLocomotives } from "@/hooks/use-locomotives";
 import { useLocomotive } from "@/hooks/use-locomotive";
 import { createSystem } from "@/lib/api/systems";
 import { createAssembly } from "@/lib/api/assemblies";
+import { createComponent, deleteComponent } from "@/lib/api/components";
 import { ApiError } from "@/lib/api/client";
 import { getSession } from "@/lib/api/session";
-import type { BackendSystemNode } from "@/lib/api/locomotives";
+import type { BackendAssembly, BackendSystemNode } from "@/lib/api/locomotives";
 
 const LOCO_ID = "loco-001"; // ES44AC — the fully-detailed BOM
 const TCO_HORIZON = 20;
@@ -1496,12 +1497,15 @@ function SystemBlock({
           {system.criticality} · {system.healthScore.toFixed(0)}%
         </span>
       </div>
-      <ul className="mt-2 ml-4 space-y-1 text-body-sm text-secondary">
+      <ul className="mt-2 ml-4 space-y-2 text-body-sm text-secondary">
         {system.assemblies.map((a) => (
-          <li key={a.id}>
-            {a.name}{" "}
-            <span className="text-caption text-quaternary">({a.components.length} components)</span>
-          </li>
+          <AssemblyBlock
+            key={a.id}
+            locomotiveId={locomotiveId}
+            assembly={a}
+            canWrite={canWrite}
+            onChanged={onChanged}
+          />
         ))}
         {system.assemblies.length === 0 && (
           <li className="text-caption text-quaternary">No assemblies yet.</li>
@@ -1543,6 +1547,130 @@ function SystemBlock({
         </div>
       )}
     </div>
+  );
+}
+
+function AssemblyBlock({
+  locomotiveId,
+  assembly,
+  canWrite,
+  onChanged,
+}: {
+  locomotiveId: string;
+  assembly: BackendAssembly;
+  canWrite: boolean;
+  onChanged: () => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  // shortcut: engineering fields (MTBF, Weibull, warranty, labor %, downtime
+  // cost) use fleet-typical defaults here rather than a full form — upgrade
+  // to a complete input set once PATCH /components/:id has an edit UI.
+  const submit = async () => {
+    if (!name.trim()) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await createComponent(locomotiveId, {
+        assemblyId: assembly.id,
+        name: name.trim(),
+        purchaseCost: 10000,
+        replacementCost: 12000,
+        lifeYears: 8,
+        mtbfHours: 20000,
+        weibullBeta: 2,
+        weibullEta: 24000,
+        mttrHours: 8,
+        warrantyYears: 2,
+        laborCostPct: 20,
+        failureImpact: "Moderate",
+        category: "General",
+        downtimeCostPerDay: 500,
+      });
+      setName("");
+      setAdding(false);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't create component.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const removeComponent = async (id: string) => {
+    try {
+      await deleteComponent(id);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't delete component.");
+    }
+  };
+
+  return (
+    <li>
+      <div className="flex items-center justify-between">
+        <span>{assembly.name}</span>
+        <span className="text-caption text-quaternary">
+          {assembly.components.length} components
+        </span>
+      </div>
+      {assembly.components.length > 0 && (
+        <ul className="mt-1 ml-3 space-y-0.5">
+          {assembly.components.map((c) => (
+            <li key={c.id} className="flex items-center justify-between text-caption">
+              <span className="text-tertiary">{c.name}</span>
+              {canWrite && (
+                <button
+                  onClick={() => removeComponent(c.id)}
+                  className="text-quaternary hover:text-error"
+                  aria-label={`Delete ${c.name}`}
+                >
+                  Remove
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {canWrite && (
+        <div className="mt-1">
+          {adding ? (
+            <div className="flex items-center gap-2">
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Component name"
+                className={cn(inputCls, "w-48")}
+              />
+              <button
+                onClick={submit}
+                disabled={submitting}
+                className="rounded-md bg-action-primary px-3 py-1.5 text-label-sm text-on-color disabled:opacity-50"
+              >
+                Add
+              </button>
+              <button
+                onClick={() => {
+                  setAdding(false);
+                  setError(null);
+                }}
+                className="text-label-sm text-tertiary"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setAdding(true)} className="text-caption text-action-primary">
+              + Add component
+            </button>
+          )}
+        </div>
+      )}
+      {error && <p className="mt-1 text-caption text-error">{error}</p>}
+    </li>
   );
 }
 
