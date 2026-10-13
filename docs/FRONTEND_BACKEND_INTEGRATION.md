@@ -293,6 +293,30 @@ the new name persisted and the old name was gone** — a genuine `PATCH`
 round-trip, not local state. Final regression after this change: lint PASS,
 typecheck PASS, 72/72 tests PASS, `next build` PASS.
 
+## 5d. Fifth increment — maintenance schedule editing, browser-verified live
+
+Same pattern again, now for maintenance schedules: an "Edit" button per row
+(ADMIN/MANAGER only) pre-fills the existing create form and calls
+`updateMaintenanceSchedule` instead of `createMaintenanceSchedule`. Closes
+that item from §7's prior list.
+
+Browser-verified live: registered a sixth fresh test account, seeded a
+locomotive + schedule via curl, logged in, clicked "Edit," confirmed the
+form pre-filled with the real values, changed the name, saved, then
+**reloaded the page and confirmed the new name persisted and the old name
+was gone**. One environment note from this pass: a stale session from a
+previous increment's test account was still in this browser profile's
+`localStorage` and silently took priority over the newly-registered
+account on first login attempt (the login form submit appeared to succeed
+but the app was actually still authenticated as the old user) — caught by
+checking `locomotives.length` was unexpectedly 0, not by a UI error.
+`localStorage.clear()` before logging in as a new test account avoids
+this; flagging it as a verification-process gotcha for future sessions,
+not a product bug (real users don't switch test accounts in the same
+browser profile without logging out first, and logout does clear the
+session correctly, as verified in earlier sessions). Final regression:
+lint PASS, typecheck PASS, 72/72 tests PASS, `next build` PASS.
+
 ## 6. Feature → endpoint mapping (current state only)
 
 | Feature | Backend endpoint | Status |
@@ -309,7 +333,7 @@ typecheck PASS, 72/72 tests PASS, `next build` PASS.
 | TCO — "Backend TCO Calculation" panel | `POST /api/v1/tco/runs` | **Connected, verified live** (see §5a). History list (`GET /locomotives/:id/tco-runs`) has an API module but no UI yet. |
 | TCO — local slider playground | none (local `runTCOSimulation` engine) | **Local preview, now labeled as such.** Intentionally kept distinct from the backend engine per `TCO_ENGINE_SPECIFICATION.md`. |
 | Monte Carlo | `POST /api/v1/simulation-runs` | **Connected, verified live** (see §5a), including a real bug found and fixed during verification. History list has an API module but no UI yet. Variance-driver and input-distribution panels stay static/illustrative — no backend equivalent. |
-| Maintenance — "Live Maintenance & Cost Ledger" panel | `GET/POST/PATCH/DELETE .../maintenance-schedules`, `GET/POST .../cost-records` | **Connected, verified live** (see §5b), including role-gating verified with a real VIEWER account. Schedule edit (`PATCH`) has an API module but no UI. Cost records are append-only by backend design — no edit/delete exists or is built. |
+| Maintenance — "Live Maintenance & Cost Ledger" panel | `GET/POST/PATCH/DELETE .../maintenance-schedules`, `GET/POST .../cost-records` | **Connected, verified live**, full CRUD including edit (see §5b, §5d), including role-gating verified with a real VIEWER account. Cost records are append-only by backend design — no edit/delete exists or is built. |
 | Maintenance — Part-level visit planner | none (local engine, same pattern as BOM's Part level) | **Static reference data, now labeled as such.** |
 | Reliability, Asset Health, Benchmark, Forecasting, Tender, Integrations, Sustainability, Configuration (Product Taxonomy / Maintenance Rules / Standards Compliance tabs) | **none — no backend module exists for any of these** (confirmed by listing `TCO_Backend/src/modules`: only `assets, auth, costs, fleets, health, organizations, scenarios, simulation, tco, users`) | **Blocked by backend — not a frontend gap.** Still synthetic/local; wiring them would require fabricating endpoints, which is out of scope by the integration mandate itself. |
 | Organization settings (`GET/PATCH /organizations/me`) and team/user management (`GET/POST/PATCH-role/DELETE /users`) | exists on the backend | **No frontend screen exists for this at all.** Flagged as a product decision (build a settings/admin screen?), not implemented speculatively. |
@@ -334,36 +358,35 @@ supports at the Component level and above.
 
 The original request specified 10 phases covering every route, full UI
 design-system stabilization, deployment reconciliation, and three
-documentation files. Four increments have now connected: auth + dashboard,
+documentation files. Five increments have now connected: auth + dashboard,
 Fleet Explorer + Live BOM, Scenarios (full CRUD)/TCO/Monte Carlo, and
-Maintenance (see §6). Not done, in priority order — genuinely actionable
-items first, then backend-blocked items that are not frontend work at all:
+Maintenance (full CRUD) (see §6). Not done, in priority order — genuinely
+actionable items first, then backend-blocked items that are not frontend
+work at all:
 
-1. Maintenance schedule edit (`PATCH /maintenance-schedules/:id`) —
-   endpoint exists, no UI (scenario edit was closed this increment, §5c —
-   same small pattern would apply here).
-2. Component edit UI (`PATCH /api/v1/components/:id`) in Live BOM —
-   endpoint exists, only create/delete are wired.
-3. TCO/simulation run history UI (`GET /locomotives/:id/tco-runs`,
+1. Component edit UI (`PATCH /api/v1/components/:id`) in Live BOM —
+   endpoint exists, only create/delete are wired. Same small pattern as
+   scenario/schedule edit (§5c, §5d) would apply.
+2. TCO/simulation run history UI (`GET /locomotives/:id/tco-runs`,
    `GET /locomotives/:id/simulation-runs`) — API modules exist, no UI.
-4. Cross-organization isolation browser verification (two genuinely
+3. Cross-organization isolation browser verification (two genuinely
    separate organizations, not just two users in one org) — not exercised
    in any session so far, only org-scoping via unit tests and the
    backend's own `findFirst({organizationId})` pattern (read in source,
    not independently black-box tested).
-5. 403 role-gating verification for TCO and component-create specifically
+4. 403 role-gating verification for TCO and component-create specifically
    (BOM system/assembly creation, Scenarios create+edit+delete, and
-   Maintenance were verified live with a real VIEWER account — see §5b,
-   §5c).
-6. Typography/spacing/theme/logo/responsive UI pass (Phase 1 of the
-   original request) — not started in these four increments; a prior,
+   Maintenance create+edit+delete were verified live with a real VIEWER
+   account — see §5b, §5d).
+5. Typography/spacing/theme/logo/responsive UI pass (Phase 1 of the
+   original request) — not started in these five increments; a prior,
    separate stabilization pass exists in `docs/FRONTEND_STABILIZATION.md`
    but predates the fleet-explorer/bom/scenarios/tco/maintenance changes
    and should be re-run against them.
-7. A decision on whether to build a team/org-settings screen for the
+6. A decision on whether to build a team/org-settings screen for the
    backend's unused `organizations`/`users` modules (§5b) — product
    decision, not started.
-8. Production deployment verification — not investigated; the backend's
+7. Production deployment verification — not investigated; the backend's
    own prior audit notes `tco.wayam.ai` was last observed serving an
    older Vite build, unrelated to this Next.js repo.
 
@@ -398,10 +421,12 @@ cc27824 feat(monte-carlo): submit real simulation runs to POST /simulation-runs
 f507d21 feat(maintenance): add Live Maintenance & Cost Ledger panel
 e0cf8cf docs(frontend): record maintenance session, backend-scope audit, remote fix
 307eac4 feat(scenarios): add scenario editing (PATCH /scenarios/:id)
+a9f6493 docs(frontend): record scenario-edit verification, close remaining-work item
+9c2a1aa feat(maintenance): add schedule editing (PATCH /maintenance-schedules/:id)
 ```
 
-(This document's own update commit for the scenario-edit increment follows
-this one in the log, committed after this edit.)
+(This document's own update commit for the maintenance-schedule-edit
+increment follows this one in the log, committed after this edit.)
 
 All committed individually to `design-system-retrofit` and pushed to
 `origin` after each commit, no squashing, no force-push, no backend-repo
