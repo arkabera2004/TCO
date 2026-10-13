@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -29,6 +29,19 @@ import {
 import { fmtCompact, fmtUSD } from "@/utils/formatters";
 import { cn } from "@/lib/utils";
 import { AppIcon } from "@/components/icons/AppIcon";
+import { useLocomotives } from "@/hooks/use-locomotives";
+import {
+  listMaintenanceSchedules,
+  listCostRecords,
+  createMaintenanceSchedule,
+  deleteMaintenanceSchedule,
+  type BackendMaintenanceSchedule,
+  type BackendCostRecord,
+  type MaintenanceScheduleInput,
+  type MaintenanceScheduleType,
+} from "@/lib/api/costs";
+import { ApiError } from "@/lib/api/client";
+import { getSession } from "@/lib/api/session";
 
 function fmtKm(km: number): string {
   return km >= 1e6 ? `${(km / 1e6).toFixed(2)}M km` : `${(km / 1000).toFixed(0)}k km`;
@@ -184,7 +197,7 @@ export default function MaintenancePage() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <PageHeader
         title="Maintenance Schedule & Rule Engine"
-        description="Depot-level service events and visit intervals showing parts replaced, labor charges, and warranty-covered vs customer costs."
+        description="Depot-level service events and visit intervals showing parts replaced, labor charges, and warranty-covered vs customer costs. (Reference data below — real persisted schedules and cost records are managed in the Live Maintenance panel.)"
         actions={
           <div className="flex items-center gap-2">
             <FilterChips
@@ -487,7 +500,301 @@ export default function MaintenancePage() {
             </div>
           </Panel>
         </SplitRow>
+
+        <LiveMaintenancePanel />
       </PageBody>
+    </div>
+  );
+}
+
+/* ────────────────────────── LIVE MAINTENANCE (real backend) ────────────────────────── */
+
+const liveInputCls =
+  "w-full rounded-md border border-muted bg-action px-2.5 py-1.5 text-body-sm text-primary outline-none placeholder:text-quaternary focus-visible:border-default focus-visible:ring-1 focus-visible:ring-active";
+
+const EMPTY_SCHEDULE_INPUT: MaintenanceScheduleInput = {
+  name: "",
+  rule: "Whichever first",
+  laborHours: 8,
+  laborRatePerHour: 95,
+  partsEstimate: 1000,
+  type: "PREVENTIVE",
+};
+
+function LiveMaintenancePanel() {
+  const locomotives = useLocomotives();
+  const [locoId, setLocoId] = useState<string | null>(null);
+  const activeLocoId =
+    locoId ?? (locomotives.status === "success" ? (locomotives.data[0]?.id ?? null) : null);
+
+  const [schedules, setSchedules] = useState<BackendMaintenanceSchedule[] | null>(null);
+  const [costRecords, setCostRecords] = useState<BackendCostRecord[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+
+  const canWrite = getSession()?.role === "ADMIN" || getSession()?.role === "MANAGER";
+  const canDelete = getSession()?.role === "ADMIN";
+
+  const load = (id: string) => {
+    setError(null);
+    Promise.all([listMaintenanceSchedules(id), listCostRecords(id)])
+      .then(([s, c]) => {
+        setSchedules(s);
+        setCostRecords(c);
+      })
+      .catch((err) =>
+        setError(err instanceof ApiError ? err.message : "Couldn't load maintenance data."),
+      );
+  };
+
+  useEffect(() => {
+    if (activeLocoId) load(activeLocoId);
+  }, [activeLocoId]);
+
+  const removeSchedule = async (id: string) => {
+    try {
+      await deleteMaintenanceSchedule(id);
+      if (activeLocoId) load(activeLocoId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't delete schedule.");
+    }
+  };
+
+  if (locomotives.status === "loading") {
+    return (
+      <Panel title="Live Maintenance & Cost Ledger">
+        <p className="p-4 text-body-sm text-tertiary">Loading fleet…</p>
+      </Panel>
+    );
+  }
+  if (locomotives.status === "error") {
+    return (
+      <Panel title="Live Maintenance & Cost Ledger">
+        <EmptyState title="Couldn't load the fleet" detail={locomotives.error} />
+      </Panel>
+    );
+  }
+  if (locomotives.data.length === 0) {
+    return (
+      <Panel title="Live Maintenance & Cost Ledger">
+        <EmptyState title="No locomotives yet" detail="Add a locomotive to manage its schedules." />
+      </Panel>
+    );
+  }
+
+  return (
+    <Panel
+      title="Live Maintenance & Cost Ledger"
+      action={
+        <div className="flex items-center gap-2">
+          <select
+            value={activeLocoId ?? ""}
+            onChange={(e) => setLocoId(e.target.value)}
+            className={cn(liveInputCls, "w-48")}
+          >
+            {locomotives.data.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.model}
+              </option>
+            ))}
+          </select>
+          {canWrite && (
+            <button
+              onClick={() => setShowForm((v) => !v)}
+              className="inline-flex h-7 items-center gap-1.5 rounded-full border border-muted bg-action px-3 text-label-sm text-secondary hover:border-default hover:text-primary"
+            >
+              <AppIcon name="add" size="xs" />
+              New schedule
+            </button>
+          )}
+        </div>
+      }
+    >
+      {error && <p className="mb-2 text-caption text-error">{error}</p>}
+      {showForm && activeLocoId && (
+        <ScheduleForm
+          locomotiveId={activeLocoId}
+          onDone={() => {
+            setShowForm(false);
+            load(activeLocoId);
+          }}
+          onCancel={() => setShowForm(false)}
+        />
+      )}
+      {schedules === null ? (
+        <p className="text-body-sm text-tertiary">Loading…</p>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div>
+            <h4 className="mb-2 text-caption uppercase tracking-[0.08em] text-quaternary">
+              Maintenance Schedules
+            </h4>
+            {schedules.length === 0 ? (
+              <p className="text-caption text-quaternary">No persisted schedules yet.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {schedules.map((s) => (
+                  <li
+                    key={s.id}
+                    className="flex items-center justify-between rounded-md border border-muted px-2.5 py-1.5 text-body-sm"
+                  >
+                    <span className="text-primary">
+                      {s.name} <span className="text-caption text-quaternary">({s.type})</span>
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <span className="font-mono-data text-caption text-secondary">
+                        {fmtUSD(s.partsEstimate + s.laborHours * s.laborRatePerHour)}
+                      </span>
+                      {canDelete && (
+                        <button
+                          onClick={() => removeSchedule(s.id)}
+                          className="text-caption text-quaternary hover:text-error"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div>
+            <h4 className="mb-2 text-caption uppercase tracking-[0.08em] text-quaternary">
+              Cost Records (ledger — append only)
+            </h4>
+            {costRecords === null || costRecords.length === 0 ? (
+              <p className="text-caption text-quaternary">No persisted cost records yet.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {costRecords.map((c) => (
+                  <li
+                    key={c.id}
+                    className="flex items-center justify-between rounded-md border border-muted px-2.5 py-1.5 text-body-sm"
+                  >
+                    <span className="text-primary">
+                      {c.year} <span className="text-caption text-quaternary">({c.category})</span>
+                    </span>
+                    <span className="font-mono-data text-caption text-secondary">
+                      {fmtUSD(c.amount)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function ScheduleForm({
+  locomotiveId,
+  onDone,
+  onCancel,
+}: {
+  locomotiveId: string;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [form, setForm] = useState<MaintenanceScheduleInput>(EMPTY_SCHEDULE_INPUT);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const set = <K extends keyof MaintenanceScheduleInput>(
+    key: K,
+    value: MaintenanceScheduleInput[K],
+  ) => setForm((f) => ({ ...f, [key]: value }));
+
+  const submit = async () => {
+    if (!form.name.trim()) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await createMaintenanceSchedule(locomotiveId, form);
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't create schedule.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="mb-4 rounded-lg border border-dashed border-muted p-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <label className="col-span-2 text-caption text-quaternary">
+          Name
+          <input
+            value={form.name}
+            onChange={(e) => set("name", e.target.value)}
+            className={cn(liveInputCls, "mt-1")}
+          />
+        </label>
+        <label className="text-caption text-quaternary">
+          Type
+          <select
+            value={form.type}
+            onChange={(e) => set("type", e.target.value as MaintenanceScheduleType)}
+            className={cn(liveInputCls, "mt-1")}
+          >
+            <option value="PREVENTIVE">Preventive</option>
+            <option value="OVERHAUL">Overhaul</option>
+            <option value="REBUILD">Rebuild</option>
+          </select>
+        </label>
+        <label className="col-span-2 sm:col-span-3 text-caption text-quaternary">
+          Rule
+          <input
+            value={form.rule}
+            onChange={(e) => set("rule", e.target.value)}
+            className={cn(liveInputCls, "mt-1")}
+          />
+        </label>
+        <label className="text-caption text-quaternary">
+          Trigger (months)
+          <input
+            type="number"
+            value={form.triggerMonths ?? ""}
+            onChange={(e) =>
+              set("triggerMonths", e.target.value ? Number(e.target.value) : undefined)
+            }
+            className={cn(liveInputCls, "mt-1")}
+          />
+        </label>
+        <label className="text-caption text-quaternary">
+          Labor Hours
+          <input
+            type="number"
+            value={form.laborHours}
+            onChange={(e) => set("laborHours", Number(e.target.value))}
+            className={cn(liveInputCls, "mt-1")}
+          />
+        </label>
+        <label className="text-caption text-quaternary">
+          Parts Estimate ($)
+          <input
+            type="number"
+            value={form.partsEstimate}
+            onChange={(e) => set("partsEstimate", Number(e.target.value))}
+            className={cn(liveInputCls, "mt-1")}
+          />
+        </label>
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          onClick={submit}
+          disabled={submitting}
+          className="rounded-md bg-action-primary px-3 py-1.5 text-label-sm text-on-color disabled:opacity-50"
+        >
+          Create schedule
+        </button>
+        <button onClick={onCancel} className="text-label-sm text-tertiary">
+          Cancel
+        </button>
+      </div>
+      {error && <p className="mt-2 text-caption text-error">{error}</p>}
     </div>
   );
 }
