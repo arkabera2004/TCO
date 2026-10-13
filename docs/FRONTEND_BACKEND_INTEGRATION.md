@@ -392,6 +392,45 @@ absent, and confirmed the "Run TCO calculation" button is present and
 **does submit successfully** — the frontend doesn't over-restrict a role
 the backend actually permits, nor under-restrict one it doesn't.
 
+## 5h. Production deployment audit — critical finding, not fixed
+
+Investigated whether `tco.wayam.ai` (flagged as a possible mismatch in a
+prior session) still diverges from this Next.js repo, and whether this
+repo's own linked Vercel project is actually serving it. Read-only
+investigation only — no deployment was triggered, no DNS or Vercel config
+was changed.
+
+**Finding**: `tco.wayam.ai` and this repo's own linked Vercel project
+(`.vercel/project.json` → project `tco`, production URL
+`locomotivewabtec-main.vercel.app`) serve **byte-identical HTML**, and
+neither is this Next.js app. Both show a TanStack Router/Vite build
+(hashed `/assets/*.js` bundles, a `$tsr` TanStack stream barrier script,
+no `_next/static` paths, no `__NEXT_DATA__`) — the same legacy frontend a
+prior session's audit flagged, still live.
+
+`vercel ls tco` shows the project's most recent production deployment is
+**64 days old**, with ~17–19s build durations (consistent with a small
+Vite build, not a Next.js build — this repo's own local `next build` just
+took several seconds of TypeScript + static generation alone). This repo
+has had dozens of commits since then (every increment in this document).
+**This Next.js codebase has likely never been deployed to this Vercel
+project at all.**
+
+`vercel env ls` for the `tco` project returns **zero environment
+variables** — meaning even a fresh deploy of this app would fall back to
+`NEXT_PUBLIC_API_BASE_URL`'s default (`http://localhost:8000`) in
+production, which cannot reach a real backend. No production backend URL
+for `TCO_Backend` was found or assumed — it has only been run locally in
+every session so far.
+
+**Not fixed, by design**: triggering a production deploy, changing Vercel
+project settings, or pointing a live custom domain (`tco.wayam.ai`) at a
+different build are infrastructure actions with real, user-facing
+consequences. They need explicit authorization and a real backend
+deployment target to point `NEXT_PUBLIC_API_BASE_URL` at — neither exists
+yet in anything this session observed. Documented here as the concrete
+blocker instead.
+
 ## 6. Feature → endpoint mapping (current state only)
 
 | Feature | Backend endpoint | Status |
@@ -455,9 +494,13 @@ backend-blocked items that are not frontend work at all:
 3. A decision on whether to build a team/org-settings screen for the
    backend's unused `organizations`/`users` modules (§5b) — product
    decision, not started.
-4. Production deployment verification — not investigated; the backend's
-   own prior audit notes `tco.wayam.ai` was last observed serving an
-   older Vite build, unrelated to this Next.js repo.
+4. **Deploy this Next.js app to production** — confirmed in §5h this has
+   likely never happened. `tco.wayam.ai` and this repo's own linked
+   Vercel project (`tco`) both still serve a 64-day-old legacy
+   TanStack/Vite build. Blocked on: (a) explicit authorization to trigger
+   a production deploy / touch the live custom domain, and (b) a real
+   deployed `TCO_Backend` URL to set `NEXT_PUBLIC_API_BASE_URL` to — the
+   backend has only been run locally in every session so far.
 
 **Backend-blocked, not frontend work** (§5b, §6): Reliability, Asset
 Health, Benchmark, Forecasting, Tender, Integrations, Sustainability, and
