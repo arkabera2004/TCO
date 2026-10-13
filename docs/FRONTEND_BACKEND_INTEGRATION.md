@@ -364,6 +364,34 @@ product bug, confirmed by reading `textContent` and clicking the element
 directly via its DOM reference rather than relying on a screenshot. Final
 regression: lint PASS, typecheck PASS, 72/72 tests PASS, `next build` PASS.
 
+## 5g. Verification-only pass — cross-org isolation and remaining 403 checks
+
+No code changes this pass — closing two verification gaps from §7 with
+genuinely separate test organizations (not just two users in one org).
+
+**Cross-organization isolation**: registered two brand-new accounts with
+different `organizationName`s (confirmed different `organizationId`s in
+the JWT), seeded a locomotive under Org A, then as Org B: `GET
+/locomotives` returned `count: 0` (not Org A's locomotive), `GET
+/locomotives/:id` for Org A's real locomotive ID returned 404
+(`RESOURCE_NOT_FOUND`, no data leak), and `DELETE` on it also 404'd.
+Repeated the GET check using the actual frontend session token (logged in
+as Org B in-browser, read its real `accessToken` from `localStorage`, hit
+the backend directly) — same 404, confirming the isolation holds for the
+exact token the frontend itself uses, not just a separately-minted curl
+token.
+
+**403/permission-model checks**: added a VIEWER-role user to Org A via
+`POST /users`, then confirmed via curl that `POST /tco/runs` returns
+**201** for VIEWER (no role gate — matches the backend's documented
+"any authenticated user" policy for TCO/simulation) while `POST
+.../systems` and `POST .../components` both return **403** (ADMIN/MANAGER
+only). Then browser-verified the frontend matches this exactly: logged in
+as the VIEWER, confirmed BOM's "Add System"/"Add component" controls are
+absent, and confirmed the "Run TCO calculation" button is present and
+**does submit successfully** — the frontend doesn't over-restrict a role
+the backend actually permits, nor under-restrict one it doesn't.
+
 ## 6. Feature → endpoint mapping (current state only)
 
 | Feature | Backend endpoint | Status |
@@ -409,32 +437,25 @@ documentation files. Seven increments have now connected: auth +
 dashboard, Fleet Explorer + Live BOM (full CRUD except system/assembly
 edit/delete, which the backend doesn't support), Scenarios (full
 CRUD)/TCO/Monte Carlo with persisted run history, and Maintenance (full
-CRUD) (see §6). Not done, in priority order — genuinely actionable items
-first, then backend-blocked items that are not frontend work at all:
+CRUD) (see §6). Cross-organization isolation and the remaining 403
+role-gating checks were verified in §5g with no code changes needed. Not
+done, in priority order — genuinely actionable items first, then
+backend-blocked items that are not frontend work at all:
 
 1. Component full field editing in Live BOM — only `name` is
    create/editable; MTBF, Weibull β/η, warranty, labor %, downtime cost
    default on create and have no edit UI (§5e). Not attempted because no
    workflow has asked for it yet, not because it's hard — `updateComponent`
    already accepts a `Partial<ComponentInput>`.
-2. Cross-organization isolation browser verification (two genuinely
-   separate organizations, not just two users in one org) — not exercised
-   in any session so far, only org-scoping via unit tests and the
-   backend's own `findFirst({organizationId})` pattern (read in source,
-   not independently black-box tested).
-3. 403 role-gating verification for TCO and component-create specifically
-   (BOM system/assembly creation, Scenarios create+edit+delete, and
-   Maintenance create+edit+delete were verified live with a real VIEWER
-   account — see §5b, §5d).
-4. Typography/spacing/theme/logo/responsive UI pass (Phase 1 of the
+2. Typography/spacing/theme/logo/responsive UI pass (Phase 1 of the
    original request) — not started in these seven increments; a prior,
    separate stabilization pass exists in `docs/FRONTEND_STABILIZATION.md`
    but predates the fleet-explorer/bom/scenarios/tco/maintenance changes
    and should be re-run against them.
-5. A decision on whether to build a team/org-settings screen for the
+3. A decision on whether to build a team/org-settings screen for the
    backend's unused `organizations`/`users` modules (§5b) — product
    decision, not started.
-6. Production deployment verification — not investigated; the backend's
+4. Production deployment verification — not investigated; the backend's
    own prior audit notes `tco.wayam.ai` was last observed serving an
    older Vite build, unrelated to this Next.js repo.
 
@@ -475,10 +496,12 @@ ff3a811 docs(frontend): record maintenance-schedule-edit verification
 00cd7f4 feat(bom): add component rename (PATCH /api/v1/components/:id)
 42ca386 docs(frontend): record component-rename verification
 92d66e7 feat(tco,monte-carlo): add persisted run history UI
+c6040b6 docs(frontend): record TCO/simulation run history verification
 ```
 
-(This document's own update commit for the run-history increment follows
-this one in the log, committed after this edit.)
+(This document's own update commit for the cross-org/403 verification
+pass follows this one in the log, committed after this edit — no source
+changes in that pass, verification only.)
 
 All committed individually to `design-system-retrofit` and pushed to
 `origin` after each commit, no squashing, no force-push, no backend-repo
