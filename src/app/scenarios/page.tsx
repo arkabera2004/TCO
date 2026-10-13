@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   ComposedChart,
   Bar,
@@ -13,13 +14,22 @@ import {
   Legend,
 } from "recharts";
 import { PageHeader, PageBody } from "@/components/layout/page-header";
-import { Panel, SplitRow, StatusBadge } from "@/components/ui/primitives";
+import { Panel, SplitRow, StatusBadge, EmptyState } from "@/components/ui/primitives";
 import { ChartTooltip } from "@/components/shared/ChartTooltip";
 import { useSimulationStore } from "@/store/simulationStore";
 import { PREDEFINED_SCENARIOS, CHART_COLORS, type Scenario } from "@/data/syntheticData";
 import { fmtCompact } from "@/utils/formatters";
-import { alpha, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { AppIcon } from "@/components/icons/AppIcon";
+import {
+  createScenario,
+  deleteScenario,
+  listScenarios,
+  type BackendScenario,
+  type ScenarioInput,
+} from "@/lib/api/scenarios";
+import { ApiError } from "@/lib/api/client";
+import { getSession } from "@/lib/api/session";
 
 function scenarioYearly(s: Scenario) {
   const annual = (s.tco - 2800000) / s.planningHorizonYears;
@@ -76,7 +86,7 @@ export default function ScenarioComparator() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <PageHeader
         title="Scenario Comparator — Multi-Track Evaluation"
-        description="Side-by-side parametric trade-off comparison. Evaluate up to three operational, maintenance, or inflation models concurrently."
+        description="Side-by-side parametric trade-off comparison (reference data, not persisted). Evaluate up to three operational, maintenance, or inflation models concurrently. Persisted scenarios usable in TCO/simulation runs are managed below."
         actions={
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-caption text-tertiary mr-1">Predefined Scenarios:</span>
@@ -287,7 +297,275 @@ export default function ScenarioComparator() {
             </div>
           </Panel>
         </SplitRow>
+
+        <BackendScenarioLibrary />
       </PageBody>
+    </div>
+  );
+}
+
+/* ────────────────────────── BACKEND SCENARIO LIBRARY (real backend) ────────────────────────── */
+
+const EMPTY_SCENARIO_INPUT: ScenarioInput = {
+  name: "",
+  planningHorizonYears: 20,
+  discountRate: 5,
+  laborRate: 95,
+  maintenanceIntervalMultiplier: 1,
+  failureRateMultiplier: 1,
+  warrantyExtendedYears: 0,
+  fuelCostPerLiter: 1.42,
+  inflationEnabled: false,
+  includeDowntime: false,
+};
+
+const inputCls =
+  "w-full rounded-md border border-muted bg-action px-2.5 py-1.5 text-body-sm text-primary outline-none placeholder:text-quaternary focus-visible:border-default focus-visible:ring-1 focus-visible:ring-active";
+
+function BackendScenarioLibrary() {
+  const [scenarios, setScenarios] = useState<BackendScenario[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+
+  const canWrite = (() => {
+    const role = getSession()?.role;
+    return role === "ADMIN" || role === "MANAGER";
+  })();
+  const canDelete = getSession()?.role === "ADMIN";
+
+  const load = () => {
+    setError(null);
+    listScenarios()
+      .then(setScenarios)
+      .catch((err) => setError(err instanceof ApiError ? err.message : "Couldn't load scenarios."));
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const remove = async (id: string) => {
+    try {
+      await deleteScenario(id);
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't delete scenario.");
+    }
+  };
+
+  return (
+    <Panel
+      title="Backend Scenario Library"
+      action={
+        canWrite && (
+          <button
+            onClick={() => setShowForm((v) => !v)}
+            className="inline-flex h-7 items-center gap-1.5 rounded-full border border-muted bg-action px-3 text-label-sm text-secondary hover:border-default hover:text-primary"
+          >
+            <AppIcon name="add" size="xs" />
+            New scenario
+          </button>
+        )
+      }
+    >
+      {error && <p className="mb-2 text-caption text-error">{error}</p>}
+      {showForm && (
+        <ScenarioForm
+          onDone={() => {
+            setShowForm(false);
+            load();
+          }}
+          onCancel={() => setShowForm(false)}
+        />
+      )}
+      {scenarios === null ? (
+        <p className="text-body-sm text-tertiary">Loading scenarios…</p>
+      ) : scenarios.length === 0 ? (
+        <EmptyState
+          title="No persisted scenarios yet"
+          detail="Scenarios created here can be used in TCO and simulation runs."
+        />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-left text-body-sm">
+            <thead className="border-b border-muted">
+              <tr className="text-caption uppercase tracking-[0.08em] text-quaternary">
+                <th className="px-3 py-2">Name</th>
+                <th className="px-3 py-2 text-right">Horizon</th>
+                <th className="px-3 py-2 text-right">Discount</th>
+                <th className="px-3 py-2 text-right">Labor Rate</th>
+                <th className="px-3 py-2 text-right">Maint ×</th>
+                <th className="px-3 py-2 text-right">Downtime</th>
+                {canDelete && <th className="px-3 py-2" />}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-muted">
+              {scenarios.map((s) => (
+                <tr key={s.id}>
+                  <td className="px-3 py-2 font-medium text-primary">{s.name}</td>
+                  <td className="px-3 py-2 text-right font-mono-data">
+                    {s.planningHorizonYears}yr
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono-data">{s.discountRate}%</td>
+                  <td className="px-3 py-2 text-right font-mono-data">${s.laborRate}/hr</td>
+                  <td className="px-3 py-2 text-right font-mono-data">
+                    {s.maintenanceIntervalMultiplier}×
+                  </td>
+                  <td className="px-3 py-2 text-right">{s.includeDowntime ? "Included" : "—"}</td>
+                  {canDelete && (
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        onClick={() => remove(s.id)}
+                        className="text-caption text-quaternary hover:text-error"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {!canWrite && scenarios !== null && scenarios.length === 0 && (
+        <p className="mt-2 text-caption text-quaternary">
+          Your role doesn&apos;t permit creating scenarios.
+        </p>
+      )}
+    </Panel>
+  );
+}
+
+function ScenarioForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
+  const [form, setForm] = useState<ScenarioInput>(EMPTY_SCENARIO_INPUT);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const set = <K extends keyof ScenarioInput>(key: K, value: ScenarioInput[K]) =>
+    setForm((f) => ({ ...f, [key]: value }));
+
+  const submit = async () => {
+    if (!form.name.trim()) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await createScenario(form);
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't create scenario.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="mb-4 rounded-lg border border-dashed border-muted p-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <label className="col-span-2 sm:col-span-3 lg:col-span-2 text-caption text-quaternary">
+          Name
+          <input
+            value={form.name}
+            onChange={(e) => set("name", e.target.value)}
+            className={cn(inputCls, "mt-1")}
+          />
+        </label>
+        <label className="text-caption text-quaternary">
+          Planning Horizon (yr)
+          <input
+            type="number"
+            value={form.planningHorizonYears}
+            onChange={(e) => set("planningHorizonYears", Number(e.target.value))}
+            className={cn(inputCls, "mt-1")}
+          />
+        </label>
+        <label className="text-caption text-quaternary">
+          Discount Rate (%)
+          <input
+            type="number"
+            value={form.discountRate}
+            onChange={(e) => set("discountRate", Number(e.target.value))}
+            className={cn(inputCls, "mt-1")}
+          />
+        </label>
+        <label className="text-caption text-quaternary">
+          Labor Rate ($/hr)
+          <input
+            type="number"
+            value={form.laborRate}
+            onChange={(e) => set("laborRate", Number(e.target.value))}
+            className={cn(inputCls, "mt-1")}
+          />
+        </label>
+        <label className="text-caption text-quaternary">
+          Maint Interval ×
+          <input
+            type="number"
+            step="0.1"
+            value={form.maintenanceIntervalMultiplier}
+            onChange={(e) => set("maintenanceIntervalMultiplier", Number(e.target.value))}
+            className={cn(inputCls, "mt-1")}
+          />
+        </label>
+        <label className="text-caption text-quaternary">
+          Failure Rate ×
+          <input
+            type="number"
+            step="0.1"
+            value={form.failureRateMultiplier}
+            onChange={(e) => set("failureRateMultiplier", Number(e.target.value))}
+            className={cn(inputCls, "mt-1")}
+          />
+        </label>
+        <label className="text-caption text-quaternary">
+          Extra Warranty (yr)
+          <input
+            type="number"
+            value={form.warrantyExtendedYears}
+            onChange={(e) => set("warrantyExtendedYears", Number(e.target.value))}
+            className={cn(inputCls, "mt-1")}
+          />
+        </label>
+        <label className="text-caption text-quaternary">
+          Fuel Cost ($/L)
+          <input
+            type="number"
+            step="0.01"
+            value={form.fuelCostPerLiter}
+            onChange={(e) => set("fuelCostPerLiter", Number(e.target.value))}
+            className={cn(inputCls, "mt-1")}
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-caption text-quaternary">
+          <input
+            type="checkbox"
+            checked={form.inflationEnabled}
+            onChange={(e) => set("inflationEnabled", e.target.checked)}
+          />
+          Inflation enabled
+        </label>
+        <label className="flex items-center gap-1.5 text-caption text-quaternary">
+          <input
+            type="checkbox"
+            checked={form.includeDowntime}
+            onChange={(e) => set("includeDowntime", e.target.checked)}
+          />
+          Include downtime cost
+        </label>
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          onClick={submit}
+          disabled={submitting}
+          className="rounded-md bg-action-primary px-3 py-1.5 text-label-sm text-on-color disabled:opacity-50"
+        >
+          Create scenario
+        </button>
+        <button onClick={onCancel} className="text-label-sm text-tertiary">
+          Cancel
+        </button>
+      </div>
+      {error && <p className="mt-2 text-caption text-error">{error}</p>}
     </div>
   );
 }
