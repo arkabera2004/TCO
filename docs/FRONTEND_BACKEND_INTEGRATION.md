@@ -278,6 +278,21 @@ before changing anything). Updated `origin`'s URL to the canonical one;
 were left untouched — reconciling which of the three remotes is the
 intended long-term canonical repo is a product/ops decision, not made here.
 
+## 5c. Fourth increment — scenario editing, browser-verified live
+
+Added scenario editing (`PATCH /api/v1/scenarios/:id`) to the "Backend
+Scenario Library": an "Edit" button per row (ADMIN/MANAGER only) pre-fills
+the existing create form and calls `updateScenario` instead of
+`createScenario`. Closed the "edit not built" gap from §7's prior list.
+
+Browser-verified live: registered a fifth fresh test account, seeded a
+scenario via curl, logged in, clicked "Edit," confirmed the form
+pre-filled with the real values, changed the name, saved, confirmed the
+updated name appeared immediately, then **reloaded the page and confirmed
+the new name persisted and the old name was gone** — a genuine `PATCH`
+round-trip, not local state. Final regression after this change: lint PASS,
+typecheck PASS, 72/72 tests PASS, `next build` PASS.
+
 ## 6. Feature → endpoint mapping (current state only)
 
 | Feature | Backend endpoint | Status |
@@ -289,7 +304,7 @@ intended long-term canonical repo is a product/ops decision, not made here.
 | Fleet Explorer (radial hierarchy) | `GET /api/v1/locomotives`, `GET /api/v1/locomotives/:id` | **Connected, verified live** (see §4a). RUL is a client-side estimate (`lifeYears - currentHours/8760`), not a backend-persisted figure. |
 | BOM — "Live Locomotive BOM" view | `GET /api/v1/locomotives/:id`, `POST .../systems`, `POST .../systems/:id/assemblies`, `POST/DELETE /api/v1/components`, `POST /api/v1/locomotives/:id/components` | **Connected, verified live** (see §4a) for System/Assembly/Component read + create, and Component delete. System/Assembly have **no edit or delete** — the backend doesn't expose those operations (only nested create + read via the locomotive tree), so none is built. Component create uses fleet-typical defaults for engineering fields (MTBF, Weibull β/η, warranty, labor %, downtime cost) rather than a full form — `PATCH /api/v1/components/:id` exists but has no edit UI yet. |
 | BOM — 5-Level Hierarchy Tree / Inventory & Criticality / Depreciation & Capital views | none — these operate on a `Part` sub-level (below Component) that **does not exist in the backend's Prisma schema** | **Static reference data, now labeled as such in the view switcher.** Not rewired — see §7. |
-| Scenarios — "Backend Scenario Library" | `GET/POST/PATCH/DELETE /api/v1/scenarios` | **Connected, verified live** (see §5a) for list/create/delete. Edit not built. |
+| Scenarios — "Backend Scenario Library" | `GET/POST/PATCH/DELETE /api/v1/scenarios` | **Connected, verified live**, full CRUD including edit (see §5a, §5c). |
 | Scenarios — local comparator | none (local data + fabricated TCO formula) | **Static reference data, now labeled as such.** |
 | TCO — "Backend TCO Calculation" panel | `POST /api/v1/tco/runs` | **Connected, verified live** (see §5a). History list (`GET /locomotives/:id/tco-runs`) has an API module but no UI yet. |
 | TCO — local slider playground | none (local `runTCOSimulation` engine) | **Local preview, now labeled as such.** Intentionally kept distinct from the backend engine per `TCO_ENGINE_SPECIFICATION.md`. |
@@ -319,35 +334,36 @@ supports at the Component level and above.
 
 The original request specified 10 phases covering every route, full UI
 design-system stabilization, deployment reconciliation, and three
-documentation files. Three sessions have now connected: auth + dashboard,
-Fleet Explorer + Live BOM, Scenarios/TCO/Monte Carlo, and Maintenance (see
-§6). Not done, in priority order — genuinely actionable items first, then
-backend-blocked items that are not frontend work at all:
+documentation files. Four increments have now connected: auth + dashboard,
+Fleet Explorer + Live BOM, Scenarios (full CRUD)/TCO/Monte Carlo, and
+Maintenance (see §6). Not done, in priority order — genuinely actionable
+items first, then backend-blocked items that are not frontend work at all:
 
-1. Scenario edit (`PATCH /scenarios/:id`) — endpoint exists, no UI.
-2. Maintenance schedule edit (`PATCH /maintenance-schedules/:id`) —
-   endpoint exists, no UI.
-3. Component edit UI (`PATCH /api/v1/components/:id`) in Live BOM —
+1. Maintenance schedule edit (`PATCH /maintenance-schedules/:id`) —
+   endpoint exists, no UI (scenario edit was closed this increment, §5c —
+   same small pattern would apply here).
+2. Component edit UI (`PATCH /api/v1/components/:id`) in Live BOM —
    endpoint exists, only create/delete are wired.
-4. TCO/simulation run history UI (`GET /locomotives/:id/tco-runs`,
+3. TCO/simulation run history UI (`GET /locomotives/:id/tco-runs`,
    `GET /locomotives/:id/simulation-runs`) — API modules exist, no UI.
-5. Cross-organization isolation browser verification (two genuinely
+4. Cross-organization isolation browser verification (two genuinely
    separate organizations, not just two users in one org) — not exercised
    in any session so far, only org-scoping via unit tests and the
    backend's own `findFirst({organizationId})` pattern (read in source,
    not independently black-box tested).
-6. 403 role-gating verification for TCO/simulation/component-create (BOM,
-   Scenarios, and Maintenance were verified live with a real VIEWER
-   account this session — see §5b).
-7. Typography/spacing/theme/logo/responsive UI pass (Phase 1 of the
-   original request) — not started in these three sessions; a prior,
+5. 403 role-gating verification for TCO and component-create specifically
+   (BOM system/assembly creation, Scenarios create+edit+delete, and
+   Maintenance were verified live with a real VIEWER account — see §5b,
+   §5c).
+6. Typography/spacing/theme/logo/responsive UI pass (Phase 1 of the
+   original request) — not started in these four increments; a prior,
    separate stabilization pass exists in `docs/FRONTEND_STABILIZATION.md`
    but predates the fleet-explorer/bom/scenarios/tco/maintenance changes
    and should be re-run against them.
-8. A decision on whether to build a team/org-settings screen for the
+7. A decision on whether to build a team/org-settings screen for the
    backend's unused `organizations`/`users` modules (§5b) — product
    decision, not started.
-9. Production deployment verification — not investigated; the backend's
+8. Production deployment verification — not investigated; the backend's
    own prior audit notes `tco.wayam.ai` was last observed serving an
    older Vite build, unrelated to this Next.js repo.
 
@@ -380,10 +396,12 @@ cc27824 feat(monte-carlo): submit real simulation runs to POST /simulation-runs
 9dcf252 docs(frontend): record TCO/scenarios/monte-carlo session and verification
 1c9777b feat(api): add costs endpoint module (maintenance schedules, cost records)
 f507d21 feat(maintenance): add Live Maintenance & Cost Ledger panel
+e0cf8cf docs(frontend): record maintenance session, backend-scope audit, remote fix
+307eac4 feat(scenarios): add scenario editing (PATCH /scenarios/:id)
 ```
 
-(This document's own update commit for the third session follows this one
-in the log, committed after this edit.)
+(This document's own update commit for the scenario-edit increment follows
+this one in the log, committed after this edit.)
 
 All committed individually to `design-system-retrofit` and pushed to
 `origin` after each commit, no squashing, no force-push, no backend-repo
