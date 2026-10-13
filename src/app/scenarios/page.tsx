@@ -25,6 +25,7 @@ import {
   createScenario,
   deleteScenario,
   listScenarios,
+  updateScenario,
   type BackendScenario,
   type ScenarioInput,
 } from "@/lib/api/scenarios";
@@ -326,6 +327,7 @@ function BackendScenarioLibrary() {
   const [scenarios, setScenarios] = useState<BackendScenario[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<BackendScenario | null>(null);
 
   const canWrite = (() => {
     const role = getSession()?.role;
@@ -359,7 +361,10 @@ function BackendScenarioLibrary() {
       action={
         canWrite && (
           <button
-            onClick={() => setShowForm((v) => !v)}
+            onClick={() => {
+              setEditing(null);
+              setShowForm((v) => !v);
+            }}
             className="inline-flex h-7 items-center gap-1.5 rounded-full border border-muted bg-action px-3 text-label-sm text-secondary hover:border-default hover:text-primary"
           >
             <AppIcon name="add" size="xs" />
@@ -369,13 +374,18 @@ function BackendScenarioLibrary() {
       }
     >
       {error && <p className="mb-2 text-caption text-error">{error}</p>}
-      {showForm && (
+      {(showForm || editing) && (
         <ScenarioForm
+          editing={editing}
           onDone={() => {
             setShowForm(false);
+            setEditing(null);
             load();
           }}
-          onCancel={() => setShowForm(false)}
+          onCancel={() => {
+            setShowForm(false);
+            setEditing(null);
+          }}
         />
       )}
       {scenarios === null ? (
@@ -396,7 +406,7 @@ function BackendScenarioLibrary() {
                 <th className="px-3 py-2 text-right">Labor Rate</th>
                 <th className="px-3 py-2 text-right">Maint ×</th>
                 <th className="px-3 py-2 text-right">Downtime</th>
-                {canDelete && <th className="px-3 py-2" />}
+                {(canWrite || canDelete) && <th className="px-3 py-2" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-muted">
@@ -412,14 +422,27 @@ function BackendScenarioLibrary() {
                     {s.maintenanceIntervalMultiplier}×
                   </td>
                   <td className="px-3 py-2 text-right">{s.includeDowntime ? "Included" : "—"}</td>
-                  {canDelete && (
-                    <td className="px-3 py-2 text-right">
-                      <button
-                        onClick={() => remove(s.id)}
-                        className="text-caption text-quaternary hover:text-error"
-                      >
-                        Remove
-                      </button>
+                  {(canWrite || canDelete) && (
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      {canWrite && (
+                        <button
+                          onClick={() => {
+                            setShowForm(false);
+                            setEditing(s);
+                          }}
+                          className="mr-2 text-caption text-quaternary hover:text-primary"
+                        >
+                          Edit
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          onClick={() => remove(s.id)}
+                          className="text-caption text-quaternary hover:text-error"
+                        >
+                          Remove
+                        </button>
+                      )}
                     </td>
                   )}
                 </tr>
@@ -437,8 +460,20 @@ function BackendScenarioLibrary() {
   );
 }
 
-function ScenarioForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
-  const [form, setForm] = useState<ScenarioInput>(EMPTY_SCENARIO_INPUT);
+function ScenarioForm({
+  editing,
+  onDone,
+  onCancel,
+}: {
+  editing?: BackendScenario | null;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [form, setForm] = useState<ScenarioInput>(
+    editing
+      ? { ...editing, operatingProfileId: editing.operatingProfileId ?? undefined }
+      : EMPTY_SCENARIO_INPUT,
+  );
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -450,10 +485,18 @@ function ScenarioForm({ onDone, onCancel }: { onDone: () => void; onCancel: () =
     setSubmitting(true);
     setError(null);
     try {
-      await createScenario(form);
+      if (editing) {
+        await updateScenario(editing.id, form);
+      } else {
+        await createScenario(form);
+      }
       onDone();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Couldn't create scenario.");
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : `Couldn't ${editing ? "update" : "create"} scenario.`,
+      );
     } finally {
       setSubmitting(false);
     }
@@ -559,7 +602,7 @@ function ScenarioForm({ onDone, onCancel }: { onDone: () => void; onCancel: () =
           disabled={submitting}
           className="rounded-md bg-action-primary px-3 py-1.5 text-label-sm text-on-color disabled:opacity-50"
         >
-          Create scenario
+          {submitting ? "Saving…" : editing ? "Save changes" : "Create scenario"}
         </button>
         <button onClick={onCancel} className="text-label-sm text-tertiary">
           Cancel
