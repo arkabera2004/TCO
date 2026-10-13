@@ -145,11 +145,67 @@ the registered test account's data remains in the local dev database
 ```
 Lint:        PASS (eslint .)
 Typecheck:   PASS (tsc --noEmit)
-Tests:       51/51 PASS (vitest run) — 39 from the prior session + 12 new
-             this session (locomotives, systems, assemblies, components
-             API modules)
+Tests:       65/65 PASS (vitest run) — 51 from the prior session + 14 new
+             this session (scenarios, tco, simulation API modules)
 Build:       PASS (next build, 19 routes + sitemap)
 ```
+
+## 5a. Second session — TCO, Scenarios, Monte Carlo
+
+Added `src/lib/api/{scenarios,tco,simulation}.ts`, typed directly from the
+backend's Zod schemas and Prisma models (`src/modules/{scenarios,tco,
+simulation}` in `TCO_Backend`, read directly — not assumed). Confirmed
+`discountRate`, `laborRate`, `fuelCostPerLiter`, and `inflationEnabled` are
+stored on `Scenario` but **not consumed** by either engine
+(`TCO_ENGINE_SPECIFICATION.md`'s own scenario-application table) — the
+frontend does not claim changing them affects results.
+
+- **Scenarios** (`/scenarios`): added a "Backend Scenario Library" panel
+  (list/create/delete) with the exact 10-field schema, role-gated
+  (create: ADMIN/MANAGER, delete: ADMIN). Edit (`PATCH`) is not built —
+  same gap pattern as BOM components. The existing local comparator is
+  now labeled "(reference data, not persisted)".
+- **TCO** (`/simulation`): added a "Backend TCO Calculation" panel
+  (`POST /tco/runs`) that picks a real locomotive + optional persisted
+  scenario + horizon and renders the real `outputs` (totalCost,
+  customerTCO, organizationTCO, avgAnnualCost). The local slider engine
+  is untouched and now labeled "local preview, not persisted" — the two
+  are intentionally distinct engines per the backend's own spec, not
+  silently diverging copies.
+- **Monte Carlo** (`/monte-carlo`): replaced the fake progress-bar
+  animation with a real `POST /simulation-runs` call, rendering the
+  persisted `percentiles` (p10/p50/p90/p95), `summary.variance`, and
+  `histogram` bins. The "Risk Contribution to TCO Variance" and
+  "Stochastic Input Parameters" panels stay static, now labeled
+  "illustrative — not computed by the backend" (no Sobol index or input
+  distribution fields exist on `SimulationRun`).
+
+### Browser-verified live (second session)
+
+Started both servers locally, registered a second fresh test account
+(the first session's had expired/reset), seeded a locomotive + system +
+assembly + component via curl, logged in, and in-browser:
+
+1. Scenarios: opened the "New scenario" form, created a real scenario via
+   `POST /scenarios`, confirmed it rendered immediately **and survived a
+   full page reload** (persisted, not local state).
+2. TCO: clicked "Run TCO calculation" against the real locomotive — got
+   real `outputs` back ($28,800 total cost / $12,000 organization TCO /
+   $1,440 avg annual, for the single seeded Turbocharger component),
+   visibly distinct from the unrelated local-preview KPI row above it.
+3. Monte Carlo: clicked "Run 1,000 Draws" — **first attempt returned a
+   real 400** (`horizonYears is required when no scenario supplies
+   planningHorizonYears`), a genuine bug (the submit call omitted
+   `horizonYears`). Fixed by defaulting to 20 years (commit `2f6b941`),
+   re-tested, and got a real persisted run back with real percentiles
+   (p10 $27k / p50 $29k / p90 $32k / p95 $33k — correctly scaled to the
+   single-component test locomotive, not the old $3.8M fleet-wide mock
+   figures).
+
+Not exercised in-browser: a non-ADMIN/MANAGER 403 on scenario create, and
+org-isolation across two different organizations (the two test accounts
+used in this project were both single-org smoke tests, not a cross-org
+isolation test).
 
 ## 6. Feature → endpoint mapping (current state only)
 
@@ -161,8 +217,13 @@ Build:       PASS (next build, 19 routes + sitemap)
 | Dashboard "Fleet Status & Health" | `GET /api/v1/locomotives` | **Connected, verified live** |
 | Fleet Explorer (radial hierarchy) | `GET /api/v1/locomotives`, `GET /api/v1/locomotives/:id` | **Connected, verified live** (see §4a). RUL is a client-side estimate (`lifeYears - currentHours/8760`), not a backend-persisted figure. |
 | BOM — "Live Locomotive BOM" view | `GET /api/v1/locomotives/:id`, `POST .../systems`, `POST .../systems/:id/assemblies`, `POST/DELETE /api/v1/components`, `POST /api/v1/locomotives/:id/components` | **Connected, verified live** (see §4a) for System/Assembly/Component read + create, and Component delete. System/Assembly have **no edit or delete** — the backend doesn't expose those operations (only nested create + read via the locomotive tree), so none is built. Component create uses fleet-typical defaults for engineering fields (MTBF, Weibull β/η, warranty, labor %, downtime cost) rather than a full form — `PATCH /api/v1/components/:id` exists but has no edit UI yet. |
-| BOM — 5-Level Hierarchy Tree / Inventory & Criticality / Depreciation & Capital views | none — these operate on a `Part` sub-level (below Component) that **does not exist in the backend's Prisma schema** | **Static reference data, now labeled as such in the view switcher.** Not rewired this session — see §7. |
-| Everything else (simulation, scenarios, monte-carlo, maintenance, reliability, asset-health, benchmark, tender, integrations, library, glossary, configure, sustainability, and the rest of the dashboard — KPI tiles, cost timeline, part-level table) | various, see `TCO_Backend/docs/openapi` or `GET /openapi.json` | **Not connected — still synthetic/local, out of scope this session** |
+| BOM — 5-Level Hierarchy Tree / Inventory & Criticality / Depreciation & Capital views | none — these operate on a `Part` sub-level (below Component) that **does not exist in the backend's Prisma schema** | **Static reference data, now labeled as such in the view switcher.** Not rewired — see §7. |
+| Scenarios — "Backend Scenario Library" | `GET/POST/PATCH/DELETE /api/v1/scenarios` | **Connected, verified live** (see §5a) for list/create/delete. Edit not built. |
+| Scenarios — local comparator | none (local data + fabricated TCO formula) | **Static reference data, now labeled as such.** |
+| TCO — "Backend TCO Calculation" panel | `POST /api/v1/tco/runs` | **Connected, verified live** (see §5a). History list (`GET /locomotives/:id/tco-runs`) has an API module but no UI yet. |
+| TCO — local slider playground | none (local `runTCOSimulation` engine) | **Local preview, now labeled as such.** Intentionally kept distinct from the backend engine per `TCO_ENGINE_SPECIFICATION.md`. |
+| Monte Carlo | `POST /api/v1/simulation-runs` | **Connected, verified live** (see §5a), including a real bug found and fixed during verification. History list has an API module but no UI yet. Variance-driver and input-distribution panels stay static/illustrative — no backend equivalent. |
+| Everything else (maintenance, reliability, asset-health, benchmark, tender, integrations, library, glossary, configure, sustainability, and the rest of the dashboard — KPI tiles, cost timeline, part-level table) | various, see `TCO_Backend/docs/openapi` or `GET /openapi.json` | **Not connected — still synthetic/local, out of scope so far.** Not yet individually audited against the backend's actual route list for these modules. |
 
 ## 6a. Why BOM's Part level stayed static
 
@@ -179,37 +240,38 @@ reference data, now labeled "(reference data)" in the view switcher, while a
 new "Live Locomotive BOM" view handles everything the backend actually
 supports at the Component level and above.
 
-## 7. Remaining work (not attempted this session, by agreement with the user)
+## 7. Remaining work
 
 The original request specified 10 phases covering every route, full UI
 design-system stabilization, deployment reconciliation, and three
-documentation files. This session additionally connected Fleet Explorer and
-BOM's Component-and-above layer (see §6). Not done, in priority order:
+documentation files. Two sessions have now connected: auth + dashboard,
+Fleet Explorer + Live BOM, and Scenarios/TCO/Monte Carlo (partial — see §6).
+Not done, in priority order:
 
-1. Wire remaining read-heavy screens (asset-health, maintenance,
-   reliability, benchmark, tender, integrations) to their respective
-   backend endpoints.
-1a. ~~Browser-verify Fleet Explorer and the Live BOM view end-to-end~~ —
-   **done this session**, see §4a (login, real hierarchy render, live
-   system creation + reload persistence, logout, protected-route
-   redirect, curl-verified component delete). Still open: in-browser
-   click-through of component create/delete (done via curl instead) and
-   the 403 path for a non-ADMIN/MANAGER role.
-2. Decide and document whether TCO/simulation math should be backend
-   canonical (`POST /tco/runs`, `POST /simulation-runs`) or an
-   intentional client-side preview — do not silently keep both diverging.
-3. Scenarios CRUD against `/api/v1/scenarios`.
-4. Monte Carlo: replace the hardcoded `MONTE_CARLO_RESULTS` dataset with
-   real `/api/v1/simulation-runs` calls.
-5. Typography/spacing/theme/logo/responsive UI pass (Phase 1 of the
+1. Audit and wire the remaining screens (maintenance, reliability,
+   asset-health, benchmark, tender, integrations, forecasting, library,
+   configure, sustainability) against the backend's actual route list —
+   not yet even audited for what exists (the backend has `costs`, `users`,
+   `organizations` modules not yet inspected either).
+2. Scenario edit (`PATCH /scenarios/:id`) — endpoint exists, no UI.
+3. TCO/simulation run history UI (`GET /locomotives/:id/tco-runs`,
+   `GET /locomotives/:id/simulation-runs`) — API modules exist, no UI.
+4. 403 (wrong role) and cross-organization isolation browser verification
+   for scenarios/TCO/simulation — not exercised this session, only via the
+   existing unit tests' mocked 403/404 cases.
+5. Component edit UI (`PATCH /api/v1/components/:id`) in Live BOM —
+   endpoint exists, only create/delete are wired.
+6. Typography/spacing/theme/logo/responsive UI pass (Phase 1 of the
    original request) — not started.
-6. Reconcile the three git remotes (`origin`, `sahay`, `wayam`) — not
-   investigated.
-7. Production deployment verification — not investigated; the backend's
+7. Reconcile the three git remotes (`origin`, `sahay`, `wayam`) — not
+   investigated. `origin` is pushed to continuously this session
+   (`arkabera2004/locomotive`, which GitHub reports moved to
+   `arkabera2004/TCO` — git follows the redirect automatically).
+8. Production deployment verification — not investigated; the backend's
    own prior audit notes `tco.wayam.ai` was last observed serving an
    older Vite build, unrelated to this Next.js repo.
 
-## 8. Commit hashes (this session, chronological)
+## 8. Commit hashes (chronological, both sessions)
 
 ```
 370d3d0 feat(api): add typed API client with auth header, timeout, and token refresh
@@ -222,7 +284,15 @@ d5808f2 feat(api): add locomotive detail, systems, assemblies, components endpoi
 2da86dd feat(bom): add Live Locomotive BOM view backed by real systems/assemblies
 6e851fa feat(bom): add component create/delete to Live Locomotive BOM
 9087f77 test(api): cover locomotives, systems, assemblies, and components modules
+d661b5e docs(frontend): update integration matrix for fleet-explorer and bom
+fe41f88 docs(frontend): record live browser verification of fleet-explorer/bom
+93e9e23 feat(api): add scenarios, tco, and simulation endpoint modules
+ba0f928 feat(scenarios): add Backend Scenario Library (real list/create/delete)
+cc27824 feat(monte-carlo): submit real simulation runs to POST /simulation-runs
+58561d1 feat(tco): add Backend TCO Calculation panel to the simulation page
+2f6b941 fix(monte-carlo): pass horizonYears on simulation run submission
 ```
 
-All committed individually to `design-system-retrofit`, no squashing, no
-force-push, no backend-repo changes.
+All committed individually to `design-system-retrofit` and pushed to
+`origin` after each commit, no squashing, no force-push, no backend-repo
+changes.
