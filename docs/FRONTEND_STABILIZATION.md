@@ -173,3 +173,12 @@ Browser console:  No errors across all routes tested
   beyond the spot-check above, reduced-motion handling).
 - Production/deployment reconciliation (`tco.wayam.ai` still on the legacy
   Vite build) — out of scope per prior notes, access-gated.
+
+## Addendum — fleet-explorer/bom functionally rewired after this audit
+
+A later session (see `docs/FRONTEND_BACKEND_INTEGRATION.md` §6) replaced
+`/fleet-explorer`'s and `/bom`'s data source (real backend calls, new forms)
+without a UI redesign — same layout/styling, so this audit's visual findings
+should still hold, but the new loading/error/empty states and BOM forms
+were not visually re-walked. Re-verify those two routes (both themes, both
+viewports) before treating this audit as current for them.

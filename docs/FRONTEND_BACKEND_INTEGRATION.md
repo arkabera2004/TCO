@@ -108,13 +108,24 @@ backend changes). I re-seeded a fresh account and data each time this
 happened and completed verification successfully; flagging it here so the
 user isn't surprised if backend state looks different than expected.
 
+### 4a. Fleet Explorer / BOM session — not browser-verified
+
+Unlike the auth + dashboard slice above, this session's Fleet Explorer and
+BOM work (commits `d5808f2`..`9087f77`) was **not** exercised against a
+running `TCO_Backend` instance or walked through in a browser — verification
+here is lint + typecheck + unit tests only (§5). Browser verification
+(login, open a locomotive, create a system/assembly/component, reload to
+confirm persistence, trigger a 403/404) is the first item in §7 and should
+be done before calling this slice "verified" rather than "implemented."
+
 ## 5. Test results (this repo, after all changes)
 
 ```
 Lint:        PASS (eslint .)
 Typecheck:   PASS (tsc --noEmit)
-Tests:       39/39 PASS (vitest run) — 27 pre-existing + 12 new
-             (7 for src/lib/api/client.ts, 5 for src/lib/auth.ts)
+Tests:       51/51 PASS (vitest run) — 39 from the prior session + 12 new
+             this session (locomotives, systems, assemblies, components
+             API modules)
 Build:       PASS (next build, 19 routes + sitemap)
 ```
 
@@ -126,17 +137,41 @@ Build:       PASS (next build, 19 routes + sitemap)
 | Logout | `POST /api/v1/auth/logout` | **Connected, verified live** |
 | Token refresh | `POST /api/v1/auth/refresh` | Connected, covered by unit tests (401→refresh→retry); not separately exercised live in-browser this session |
 | Dashboard "Fleet Status & Health" | `GET /api/v1/locomotives` | **Connected, verified live** |
-| Everything else (fleet-explorer, BOM, simulation, scenarios, monte-carlo, maintenance, reliability, asset-health, benchmark, tender, integrations, library, glossary, configure, sustainability, and the rest of the dashboard — KPI tiles, cost timeline, part-level table) | various, see `TCO_Backend/docs/openapi` or `GET /openapi.json` | **Not connected — still synthetic/local, unchanged this session** |
+| Fleet Explorer (radial hierarchy) | `GET /api/v1/locomotives`, `GET /api/v1/locomotives/:id` | **Connected.** Implemented and unit-tested this session; not yet browser-verified (see §4a). RUL is a client-side estimate (`lifeYears - currentHours/8760`), not a backend-persisted figure. |
+| BOM — "Live Locomotive BOM" view | `GET /api/v1/locomotives/:id`, `POST .../systems`, `POST .../systems/:id/assemblies`, `POST/DELETE /api/v1/components`, `POST /api/v1/locomotives/:id/components` | **Connected** for System/Assembly/Component read + create, and Component delete. System/Assembly have **no edit or delete** — the backend doesn't expose those operations (only nested create + read via the locomotive tree), so none is built. Component create uses fleet-typical defaults for engineering fields (MTBF, Weibull β/η, warranty, labor %, downtime cost) rather than a full form — `PATCH /api/v1/components/:id` exists but has no edit UI yet. |
+| BOM — 5-Level Hierarchy Tree / Inventory & Criticality / Depreciation & Capital views | none — these operate on a `Part` sub-level (below Component) that **does not exist in the backend's Prisma schema** | **Static reference data, now labeled as such in the view switcher.** Not rewired this session — see §7. |
+| Everything else (simulation, scenarios, monte-carlo, maintenance, reliability, asset-health, benchmark, tender, integrations, library, glossary, configure, sustainability, and the rest of the dashboard — KPI tiles, cost timeline, part-level table) | various, see `TCO_Backend/docs/openapi` or `GET /openapi.json` | **Not connected — still synthetic/local, out of scope this session** |
+
+## 6a. Why BOM's Part level stayed static
+
+The backend's asset hierarchy (`TCO_Backend/prisma/schema.prisma`) stops at
+`Locomotive → System → Assembly → Component` — there is no `Part` model, no
+inventory fields (on-hand qty, reorder point, safety stock, ABC/VED class),
+no reman/procurement pricing, and no part-level warranty-km tracking. The
+BOM page's "5-Level Hierarchy Tree," "Inventory & Criticality," and
+"Depreciation & Capital" views are built entirely around that missing Part
+level (`src/data/bomData.ts` + `src/store/partsStore.ts`, both local/synthetic).
+Rewiring them would mean fabricating a backend capability that doesn't
+exist, which the integration mandate explicitly disallows. They're kept as
+reference data, now labeled "(reference data)" in the view switcher, while a
+new "Live Locomotive BOM" view handles everything the backend actually
+supports at the Component level and above.
 
 ## 7. Remaining work (not attempted this session, by agreement with the user)
 
 The original request specified 10 phases covering every route, full UI
 design-system stabilization, deployment reconciliation, and three
-documentation files. Only the auth + API-client + one-screen slice above
-was built. Not done, in priority order:
+documentation files. This session additionally connected Fleet Explorer and
+BOM's Component-and-above layer (see §6). Not done, in priority order:
 
-1. Wire remaining read-heavy screens (fleet-explorer, asset-health,
-   maintenance, reliability) to their respective backend endpoints.
+1. Wire remaining read-heavy screens (asset-health, maintenance,
+   reliability, benchmark, tender, integrations) to their respective
+   backend endpoints.
+1a. Browser-verify Fleet Explorer and the Live BOM view end-to-end
+   (login → open a locomotive → create a system/assembly/component →
+   reload → confirm persistence) — not performed this session because
+   the local backend wasn't running; implementation is unit-tested but
+   not yet exercised against a live server.
 2. Decide and document whether TCO/simulation math should be backend
    canonical (`POST /tco/runs`, `POST /simulation-runs`) or an
    intentional client-side preview — do not silently keep both diverging.
@@ -158,6 +193,12 @@ was built. Not done, in priority order:
 07efa4d feat(auth): replace demo auth with real backend login/logout
 88d2cda feat(login): call real login/logout, show backend error, remove demo banner
 89f69c2 feat(dashboard): connect Fleet Status panel to real GET /locomotives
+0015dd7 docs: record frontend-backend integration session (auth + fleet slice)
+d5808f2 feat(api): add locomotive detail, systems, assemblies, components endpoints
+66b424c feat(fleet-explorer): connect radial hierarchy to real locomotive data
+2da86dd feat(bom): add Live Locomotive BOM view backed by real systems/assemblies
+6e851fa feat(bom): add component create/delete to Live Locomotive BOM
+9087f77 test(api): cover locomotives, systems, assemblies, and components modules
 ```
 
 All committed individually to `design-system-retrofit`, no squashing, no
