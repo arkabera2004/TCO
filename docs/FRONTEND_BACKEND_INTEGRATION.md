@@ -108,15 +108,37 @@ backend changes). I re-seeded a fresh account and data each time this
 happened and completed verification successfully; flagging it here so the
 user isn't surprised if backend state looks different than expected.
 
-### 4a. Fleet Explorer / BOM session — not browser-verified
+### 4a. Fleet Explorer / BOM session — browser-verified live
 
-Unlike the auth + dashboard slice above, this session's Fleet Explorer and
-BOM work (commits `d5808f2`..`9087f77`) was **not** exercised against a
-running `TCO_Backend` instance or walked through in a browser — verification
-here is lint + typecheck + unit tests only (§5). Browser verification
-(login, open a locomotive, create a system/assembly/component, reload to
-confirm persistence, trigger a 403/404) is the first item in §7 and should
-be done before calling this slice "verified" rather than "implemented."
+Started `TCO_Backend` locally (Fastify on :8000, Postgres via `pg_isready`)
+and `npm run dev` (Next.js on :3000), registered a fresh ADMIN test account
+via `POST /auth/register`, and seeded a fleet + locomotive (ES44AC) via
+curl using the exact payload shapes the frontend sends. Then, in-browser:
+
+1. Logged in with the seeded test account — succeeded.
+2. `/fleet-explorer` rendered the real locomotive, its real System → Assembly
+   → Component chain (Engine → Exhaust Path → Turbocharger, seeded via
+   curl), and clicking the component node showed the exact real field
+   values ($10,000 purchase / $12,000 replace / 8yr life / 20k MTBF / 8h
+   MTTR, 100% health and reliability since `currentHours: 0`).
+3. `/bom` → "Live Locomotive BOM" view rendered the same real tree, with
+   the other three views correctly labeled "(reference data)."
+4. Used the in-page "Add System" form to create a "Traction" system —
+   appeared immediately, and **survived a full page reload**, confirming
+   it round-trips through the real backend rather than local state.
+5. Logged out — redirected to `/login`; then navigating directly to `/bom`
+   while signed out redirected back to `/login` (protected-route guard
+   works).
+6. Via curl: confirmed `DELETE /components/:id` soft-deletes the component
+   (200, excluded from a subsequent `GET .../components`).
+7. Browser console showed no errors during the walkthrough.
+
+Not exercised in-browser this pass: the component create/delete buttons
+inside the UI itself (verified against the live backend via curl instead —
+see step 6), and the 403 path for a non-ADMIN/MANAGER role (no second test
+account with a restricted role was created). Both servers were stopped and
+the registered test account's data remains in the local dev database
+(harmless — a local-only Postgres instance, not shared/production).
 
 ## 5. Test results (this repo, after all changes)
 
@@ -137,8 +159,8 @@ Build:       PASS (next build, 19 routes + sitemap)
 | Logout | `POST /api/v1/auth/logout` | **Connected, verified live** |
 | Token refresh | `POST /api/v1/auth/refresh` | Connected, covered by unit tests (401→refresh→retry); not separately exercised live in-browser this session |
 | Dashboard "Fleet Status & Health" | `GET /api/v1/locomotives` | **Connected, verified live** |
-| Fleet Explorer (radial hierarchy) | `GET /api/v1/locomotives`, `GET /api/v1/locomotives/:id` | **Connected.** Implemented and unit-tested this session; not yet browser-verified (see §4a). RUL is a client-side estimate (`lifeYears - currentHours/8760`), not a backend-persisted figure. |
-| BOM — "Live Locomotive BOM" view | `GET /api/v1/locomotives/:id`, `POST .../systems`, `POST .../systems/:id/assemblies`, `POST/DELETE /api/v1/components`, `POST /api/v1/locomotives/:id/components` | **Connected** for System/Assembly/Component read + create, and Component delete. System/Assembly have **no edit or delete** — the backend doesn't expose those operations (only nested create + read via the locomotive tree), so none is built. Component create uses fleet-typical defaults for engineering fields (MTBF, Weibull β/η, warranty, labor %, downtime cost) rather than a full form — `PATCH /api/v1/components/:id` exists but has no edit UI yet. |
+| Fleet Explorer (radial hierarchy) | `GET /api/v1/locomotives`, `GET /api/v1/locomotives/:id` | **Connected, verified live** (see §4a). RUL is a client-side estimate (`lifeYears - currentHours/8760`), not a backend-persisted figure. |
+| BOM — "Live Locomotive BOM" view | `GET /api/v1/locomotives/:id`, `POST .../systems`, `POST .../systems/:id/assemblies`, `POST/DELETE /api/v1/components`, `POST /api/v1/locomotives/:id/components` | **Connected, verified live** (see §4a) for System/Assembly/Component read + create, and Component delete. System/Assembly have **no edit or delete** — the backend doesn't expose those operations (only nested create + read via the locomotive tree), so none is built. Component create uses fleet-typical defaults for engineering fields (MTBF, Weibull β/η, warranty, labor %, downtime cost) rather than a full form — `PATCH /api/v1/components/:id` exists but has no edit UI yet. |
 | BOM — 5-Level Hierarchy Tree / Inventory & Criticality / Depreciation & Capital views | none — these operate on a `Part` sub-level (below Component) that **does not exist in the backend's Prisma schema** | **Static reference data, now labeled as such in the view switcher.** Not rewired this session — see §7. |
 | Everything else (simulation, scenarios, monte-carlo, maintenance, reliability, asset-health, benchmark, tender, integrations, library, glossary, configure, sustainability, and the rest of the dashboard — KPI tiles, cost timeline, part-level table) | various, see `TCO_Backend/docs/openapi` or `GET /openapi.json` | **Not connected — still synthetic/local, out of scope this session** |
 
@@ -167,11 +189,12 @@ BOM's Component-and-above layer (see §6). Not done, in priority order:
 1. Wire remaining read-heavy screens (asset-health, maintenance,
    reliability, benchmark, tender, integrations) to their respective
    backend endpoints.
-1a. Browser-verify Fleet Explorer and the Live BOM view end-to-end
-   (login → open a locomotive → create a system/assembly/component →
-   reload → confirm persistence) — not performed this session because
-   the local backend wasn't running; implementation is unit-tested but
-   not yet exercised against a live server.
+1a. ~~Browser-verify Fleet Explorer and the Live BOM view end-to-end~~ —
+   **done this session**, see §4a (login, real hierarchy render, live
+   system creation + reload persistence, logout, protected-route
+   redirect, curl-verified component delete). Still open: in-browser
+   click-through of component create/delete (done via curl instead) and
+   the 403 path for a non-ADMIN/MANAGER role.
 2. Decide and document whether TCO/simulation math should be backend
    canonical (`POST /tco/runs`, `POST /simulation-runs`) or an
    intentional client-side preview — do not silently keep both diverging.
