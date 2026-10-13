@@ -50,7 +50,7 @@ import { useLocomotives } from "@/hooks/use-locomotives";
 import { useLocomotive } from "@/hooks/use-locomotive";
 import { createSystem } from "@/lib/api/systems";
 import { createAssembly } from "@/lib/api/assemblies";
-import { createComponent, deleteComponent } from "@/lib/api/components";
+import { createComponent, deleteComponent, updateComponent } from "@/lib/api/components";
 import { ApiError } from "@/lib/api/client";
 import { getSession } from "@/lib/api/session";
 import type { BackendAssembly, BackendSystemNode } from "@/lib/api/locomotives";
@@ -1565,10 +1565,14 @@ function AssemblyBlock({
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // shortcut: engineering fields (MTBF, Weibull, warranty, labor %, downtime
-  // cost) use fleet-typical defaults here rather than a full form — upgrade
-  // to a complete input set once PATCH /components/:id has an edit UI.
+  // cost) use fleet-typical defaults here and are not editable — name is the
+  // only field exposed for create/edit. Upgrade to a complete field set if a
+  // real engineering workflow needs it.
   const submit = async () => {
     if (!name.trim()) return;
     setSubmitting(true);
@@ -1609,6 +1613,21 @@ function AssemblyBlock({
     }
   };
 
+  const saveEdit = async (id: string) => {
+    if (!editName.trim()) return;
+    setSavingEdit(true);
+    setError(null);
+    try {
+      await updateComponent(id, { name: editName.trim() });
+      setEditingId(null);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't update component.");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   return (
     <li>
       <div className="flex items-center justify-between">
@@ -1619,20 +1638,53 @@ function AssemblyBlock({
       </div>
       {assembly.components.length > 0 && (
         <ul className="mt-1 ml-3 space-y-0.5">
-          {assembly.components.map((c) => (
-            <li key={c.id} className="flex items-center justify-between text-caption">
-              <span className="text-tertiary">{c.name}</span>
-              {canWrite && (
+          {assembly.components.map((c) =>
+            editingId === c.id ? (
+              <li key={c.id} className="flex items-center gap-1.5 py-0.5">
+                <input
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className={cn(inputCls, "h-6 flex-1 py-0.5 text-caption")}
+                  autoFocus
+                />
                 <button
-                  onClick={() => removeComponent(c.id)}
-                  className="text-quaternary hover:text-error"
-                  aria-label={`Delete ${c.name}`}
+                  onClick={() => saveEdit(c.id)}
+                  disabled={savingEdit}
+                  className="text-caption text-action-primary disabled:opacity-50"
                 >
-                  Remove
+                  Save
                 </button>
-              )}
-            </li>
-          ))}
+                <button onClick={() => setEditingId(null)} className="text-caption text-quaternary">
+                  Cancel
+                </button>
+              </li>
+            ) : (
+              <li key={c.id} className="flex items-center justify-between text-caption">
+                <span className="text-tertiary">{c.name}</span>
+                {canWrite && (
+                  <span className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setEditingId(c.id);
+                        setEditName(c.name);
+                      }}
+                      className="text-quaternary hover:text-primary"
+                      aria-label={`Edit ${c.name}`}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => removeComponent(c.id)}
+                      className="text-quaternary hover:text-error"
+                      aria-label={`Delete ${c.name}`}
+                    >
+                      Remove
+                    </button>
+                  </span>
+                )}
+              </li>
+            ),
+          )}
         </ul>
       )}
       {canWrite && (
