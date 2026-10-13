@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -14,32 +14,49 @@ import {
 } from "recharts";
 import { PageHeader, PageBody } from "@/components/layout/page-header";
 import { Panel, SplitRow, KpiTile, StatusBadge } from "@/components/ui/primitives";
+import { FilterChips } from "@/components/ui/data-table";
 import { ChartTooltip } from "@/components/shared/ChartTooltip";
 import { MONTE_CARLO_RESULTS, CHART_COLORS } from "@/data/syntheticData";
 import { fmtCompact } from "@/utils/formatters";
 import { AppIcon } from "@/components/icons/AppIcon";
 import { cn } from "@/lib/utils";
+import { useLocomotives } from "@/hooks/use-locomotives";
+import { createSimulationRun, type BackendSimulationRun } from "@/lib/api/simulation";
+import { ApiError } from "@/lib/api/client";
 
 const MC = MONTE_CARLO_RESULTS;
 
 export default function MonteCarloPage() {
-  const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState(100);
+  const locomotives = useLocomotives();
+  const [locoId, setLocoId] = useState<string | null>(null);
+  const activeLocoId =
+    locoId ?? (locomotives.status === "success" ? (locomotives.data[0]?.id ?? null) : null);
 
-  const rerun = () => {
-    if (running) return;
+  const [run, setRun] = useState<BackendSimulationRun | null>(null);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const rerun = async () => {
+    if (running || !activeLocoId) return;
     setRunning(true);
-    setProgress(0);
-    const start = Date.now();
-    const iv = setInterval(() => {
-      const pct = Math.min(100, ((Date.now() - start) / 2000) * 100);
-      setProgress(pct);
-      if (pct >= 100) {
-        clearInterval(iv);
-        setRunning(false);
-      }
-    }, 40);
+    setError(null);
+    try {
+      const result = await createSimulationRun({ locomotiveId: activeLocoId, iterations: 1000 });
+      setRun(result);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Simulation run failed.");
+    } finally {
+      setRunning(false);
+    }
   };
+
+  const histogram = useMemo(() => {
+    if (!run) return MC.histogram.map((b) => ({ bin: b.bin, count: b.count }));
+    return run.histogram.map((b) => ({
+      bin: `${fmtCompact(b.rangeStart)}–${fmtCompact(b.rangeEnd)}`,
+      count: b.count,
+    }));
+  }, [run]);
 
   const barColor = (i: number) => {
     if (i <= 1) return CHART_COLORS.green;
@@ -48,15 +65,23 @@ export default function MonteCarloPage() {
     return CHART_COLORS.red;
   };
 
-  const percentiles = [
-    { p: "P5 (Best Case)", v: MC.p5, tone: "success" as const },
-    { p: "P10", v: MC.p10, tone: "success" as const },
-    { p: "P25", v: MC.p25, tone: "info" as const },
-    { p: "P50 (Median Baseline)", v: MC.p50, tone: "neutral" as const },
-    { p: "P75", v: MC.p75, tone: "warning" as const },
-    { p: "P90", v: MC.p90, tone: "error" as const },
-    { p: "P95 (Worst Case)", v: MC.p95, tone: "error" as const },
-  ];
+  const percentiles = run
+    ? [
+        { p: "P10 (Best 10%)", v: run.percentiles.p10, tone: "success" as const },
+        { p: "P50 (Median)", v: run.percentiles.p50, tone: "neutral" as const },
+        { p: "P90 (Worst 10%)", v: run.percentiles.p90, tone: "warning" as const },
+        { p: "P95 (Worst Case)", v: run.percentiles.p95, tone: "error" as const },
+      ]
+    : [
+        { p: "P5 (Best Case)", v: MC.p5, tone: "success" as const },
+        { p: "P10", v: MC.p10, tone: "success" as const },
+        { p: "P25", v: MC.p25, tone: "info" as const },
+        { p: "P50 (Median Baseline)", v: MC.p50, tone: "neutral" as const },
+        { p: "P75", v: MC.p75, tone: "warning" as const },
+        { p: "P90", v: MC.p90, tone: "error" as const },
+        { p: "P95 (Worst Case)", v: MC.p95, tone: "error" as const },
+      ];
+  const medianForDelta = run ? run.percentiles.p50 : MC.p50;
 
   const inputRanges = [
     { input: "Fuel & Power Cost", dist: "Log-normal", min: "$1.10", max: "$2.80", sd: "$0.35" },
@@ -69,49 +94,74 @@ export default function MonteCarloPage() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <PageHeader
         title="Monte Carlo Risk Simulation"
-        description="1,000-iteration stochastic lifecycle cost analysis with probability distributions, percentile confidence intervals, and sensitivity variance drivers."
+        description={
+          run
+            ? `Real backend simulation run (${run.iterations.toLocaleString()} iterations, seed ${run.seed}) for the selected locomotive.`
+            : "Showing illustrative reference data below — run a real simulation against a locomotive to see persisted backend results."
+        }
         actions={
           <div className="flex items-center gap-2">
+            {locomotives.status === "success" && locomotives.data.length > 0 && (
+              <FilterChips
+                options={locomotives.data.map((l) => ({ id: l.id, label: l.model }))}
+                value={activeLocoId ?? ""}
+                onChange={(id) => {
+                  setLocoId(id);
+                  setRun(null);
+                }}
+              />
+            )}
             <button
               onClick={rerun}
-              disabled={running}
+              disabled={running || !activeLocoId}
               className="inline-flex h-8 items-center gap-2 rounded-full bg-action-primary px-3 text-label-sm font-medium text-on-color transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               <AppIcon name="power" size="xs" />
-              <span>{running ? "Simulating…" : "Re-run 1,000 Draws"}</span>
+              <span>{running ? "Simulating…" : "Run 1,000 Draws"}</span>
             </button>
           </div>
         }
       />
 
       <PageBody className="flex flex-col gap-4">
+        {error && (
+          <div className="shrink-0 rounded-md border border-error/30 bg-error/10 px-3 py-2 text-caption text-error">
+            {error}
+          </div>
+        )}
         {/* KPI Tiles */}
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-4 shrink-0">
           <KpiTile
             label="P50 Median TCO"
-            value="$3.82M"
+            value={fmtCompact(medianForDelta)}
             delta="Most probable outcome"
             tone="neutral"
             hint="50th percentile expectation"
           />
           <KpiTile
             label="P90 (Worst 10%)"
-            value="$4.35M"
-            delta="+$530k exposure vs P50"
+            value={fmtCompact(run ? run.percentiles.p90 : MC.p90)}
+            delta={`vs P50: ${fmtCompact((run ? run.percentiles.p90 : MC.p90) - medianForDelta)}`}
             tone="error"
             hint="Extreme adverse risk limit"
           />
           <KpiTile
             label="P10 (Best 10%)"
-            value="$3.42M"
-            delta="-$400k savings vs P50"
+            value={fmtCompact(run ? run.percentiles.p10 : MC.p10)}
+            delta={`vs P50: ${fmtCompact((run ? run.percentiles.p10 : MC.p10) - medianForDelta)}`}
             tone="success"
             hint="High-reliability outcome"
           />
           <KpiTile
             label="Risk Range (P10→P90)"
-            value="$930k"
-            delta={`σ = ${fmtCompact(MC.stdDev)} · n=1,000`}
+            value={fmtCompact(
+              (run ? run.percentiles.p90 : MC.p90) - (run ? run.percentiles.p10 : MC.p10),
+            )}
+            delta={
+              run
+                ? `variance = ${fmtCompact(run.summary.variance)} · n=${run.iterations.toLocaleString()}`
+                : `σ = ${fmtCompact(MC.stdDev)} · n=1,000`
+            }
             tone="info"
             hint="80% confidence interval width"
           />
@@ -120,34 +170,28 @@ export default function MonteCarloPage() {
         {/* Top Split: Histogram & Variance Drivers */}
         <SplitRow from="xl" ratio="1.6/1" className="shrink-0">
           <Panel
-            title="TCO Outcome Distribution (1,000 Runs)"
+            title={
+              run
+                ? `TCO Outcome Distribution (${run.iterations.toLocaleString()} Runs)`
+                : "TCO Outcome Distribution (reference data)"
+            }
             action={
               <span className="text-caption text-quaternary">
-                20-Year Lifecycle · Frequency Distribution
+                {run ? `${run.horizonYears}-Year Horizon` : "20-Year Lifecycle"} · Frequency
+                Distribution
               </span>
             }
           >
             <div className="space-y-3">
               {running && (
-                <div className="rounded-md border border-muted bg-container p-2">
-                  <div className="flex justify-between text-caption text-tertiary mb-1">
-                    <span>Sampling stochastic draws...</span>
-                    <span className="font-mono-data">
-                      {Math.round((progress / 100) * 1000)} / 1,000
-                    </span>
-                  </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-hover">
-                    <div
-                      className="h-full rounded-full bg-primary transition-all duration-100"
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
+                <div className="rounded-md border border-muted bg-container p-2 text-caption text-tertiary">
+                  Submitting simulation request to the backend…
                 </div>
               )}
               <div className="h-[310px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
-                    data={MC.histogram}
+                    data={histogram}
                     style={{ opacity: running ? 0.35 : 1, transition: "opacity 0.3s" }}
                     margin={{ top: 10, right: 10, left: -20, bottom: 20 }}
                   >
@@ -163,7 +207,7 @@ export default function MonteCarloPage() {
                     <YAxis stroke={CHART_COLORS.textMuted} fontSize={10} />
                     <Tooltip content={<ChartTooltip formatter={(v) => `${v} runs`} />} />
                     <ReferenceLine
-                      x="$3.8M – $4.0M"
+                      x={histogram[Math.floor(histogram.length / 2)]?.bin}
                       stroke="var(--ref-gray-300)"
                       strokeDasharray="3 3"
                       label={{
@@ -174,7 +218,7 @@ export default function MonteCarloPage() {
                       }}
                     />
                     <Bar dataKey="count" name="Simulation runs" radius={[3, 3, 0, 0]}>
-                      {MC.histogram.map((_, i) => (
+                      {histogram.map((_, i) => (
                         <Cell key={i} fill={barColor(i)} />
                       ))}
                     </Bar>
@@ -182,15 +226,20 @@ export default function MonteCarloPage() {
                 </ResponsiveContainer>
               </div>
               <p className="text-center text-caption text-quaternary">
-                Bins reflect full fleet replacement, fuel volatility, and Weibull random failure
-                draws.
+                {run
+                  ? "Bins from the backend's persisted histogram for this run."
+                  : "Reference data — run a simulation above to see real backend results."}
               </p>
             </div>
           </Panel>
 
           <Panel
-            title="Risk Contribution to TCO Variance"
-            action={<span className="text-caption text-quaternary">Sobol sensitivity index</span>}
+            title="Risk Contribution to TCO Variance (illustrative)"
+            action={
+              <span className="text-caption text-quaternary">
+                Not computed by the backend — static reference only
+              </span>
+            }
           >
             <div className="space-y-3">
               <div className="h-[260px] w-full">
@@ -246,7 +295,10 @@ export default function MonteCarloPage() {
           <Panel
             title="Confidence Percentile Bands"
             action={
-              <span className="text-caption text-quaternary">Deterministic baseline: $3.82M</span>
+              <span className="text-caption text-quaternary">
+                {run ? "Backend-persisted run" : "Reference data"} baseline:{" "}
+                {fmtCompact(medianForDelta)}
+              </span>
             }
             padded={false}
           >
@@ -267,7 +319,7 @@ export default function MonteCarloPage() {
                 </thead>
                 <tbody className="divide-y divide-muted font-mono-data text-body-sm">
                   {percentiles.map((row) => {
-                    const d = row.v - MC.p50;
+                    const d = row.v - medianForDelta;
                     return (
                       <tr key={row.p} className="transition-colors hover:bg-hover">
                         <td className="px-3 py-2 font-sans font-medium text-secondary">{row.p}</td>
@@ -281,7 +333,7 @@ export default function MonteCarloPage() {
                             <StatusBadge tone={row.tone}>
                               {d > 0 ? "+" : "−"}
                               {fmtCompact(Math.abs(d))} ({d > 0 ? "+" : "−"}
-                              {Math.abs((d / MC.p50) * 100).toFixed(0)}%)
+                              {Math.abs((d / medianForDelta) * 100).toFixed(0)}%)
                             </StatusBadge>
                           )}
                         </td>
@@ -294,10 +346,10 @@ export default function MonteCarloPage() {
           </Panel>
 
           <Panel
-            title="Stochastic Input Parameters & Distributions"
+            title="Stochastic Input Parameters & Distributions (illustrative)"
             action={
               <span className="text-caption text-quaternary">
-                Monte Carlo parameter distributions
+                Not returned by the backend — static reference only
               </span>
             }
             padded={false}
