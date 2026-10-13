@@ -207,6 +207,77 @@ org-isolation across two different organizations (the two test accounts
 used in this project were both single-org smoke tests, not a cross-org
 isolation test).
 
+## 5b. Third session — Maintenance, and a critical backend-scope finding
+
+**The backend only has 10 modules, total**: `assets`, `auth`, `costs`,
+`fleets`, `health`, `organizations`, `scenarios`, `simulation`, `tco`,
+`users` (`ls TCO_Backend/src/modules`). Of the 9 screens this session's
+request prioritized (maintenance, reliability, asset-health, benchmarking,
+forecasting, tender, integrations, sustainability, configuration), **only
+maintenance has a backing module** (`costs`: maintenance-schedules and
+cost-records, scoped per locomotive). The other 8 have zero backend routes,
+zero Prisma models, nothing to connect to — not an oversight, an actual gap.
+Wiring any of them would mean fabricating endpoints, which the integration
+mandate explicitly disallows. They remain local/synthetic and are
+documented as **blocked by backend** in §6, not "not done yet."
+
+Also found: `organizations` (`GET/PATCH /organizations/me`) and `users`
+(`GET/POST/PATCH role/DELETE /users`) modules exist with no corresponding
+frontend screen at all (no team/admin-settings route exists in this app).
+This is a product decision, not a coding task — flagging it rather than
+inventing a settings page nobody asked for.
+
+Added `src/lib/api/costs.ts` (list/create/update/delete maintenance
+schedules; list/create cost records — the backend has no update/delete for
+cost records, it's an append-only ledger by design) and a "Live Maintenance
+& Cost Ledger" panel on `/maintenance`, additive to the existing Part-level
+visit planner (now labeled reference data), following the same pattern as
+BOM and Scenarios.
+
+### Browser-verified live (third session)
+
+Started both servers, registered a fresh ADMIN test account (the prior
+session's had again expired/reset — the backend's dev database does not
+persist reliably between sessions; do not assume prior sessions' seeded
+data still exists) plus a VIEWER account in the same org via
+`POST /users`, seeded a locomotive via curl, and in-browser:
+
+1. Logged in as ADMIN, opened `/maintenance`, confirmed the Live panel's
+   empty state ("No persisted schedules yet") with no console errors.
+2. Created a real schedule via the form — appeared immediately **and
+   survived a full page reload**.
+3. Deleted it via the "Remove" button — confirmed removed, not just
+   hidden client-side.
+4. Logged in as VIEWER (role that cannot write per the backend's
+   `requireRole('ADMIN','MANAGER')`), confirmed via curl that
+   `POST .../maintenance-schedules` genuinely 403s for this role, then
+   confirmed in-browser that the "New schedule" button is **not rendered**
+   for VIEWER on `/maintenance`, and the "New scenario" button is likewise
+   hidden on `/scenarios` — closing the "403 path not exercised" gap from
+   the second session for these two screens (TCO and component-create role
+   gating were not re-checked this pass; same gating logic, not
+   independently re-verified).
+
+### Final verification, this session
+
+```
+Lint:        PASS (eslint .)
+Typecheck:   PASS (tsc --noEmit)
+Tests:       72/72 PASS (vitest run) — 65 from prior sessions + 7 new
+             this session (src/lib/api/costs.test.ts)
+Build:       PASS (next build, 19 routes + sitemap)
+```
+
+Git remote note: `origin` was pointed at `arkabera2004/locomotive.git`,
+which `gh repo view` confirmed is the same repository renamed to
+`arkabera2004/TCO.git` under the same owner (not a different destination —
+verified via `gh repo view arkabera2004/locomotive` and
+`arkabera2004/TCO` both resolving to `nameWithOwner: "arkabera2004/TCO"`
+before changing anything). Updated `origin`'s URL to the canonical one;
+`sahay` (`WayamAI/TCO_SAHAY_Frontend`) and `wayam` (`WayamAI/TCO`) remotes
+were left untouched — reconciling which of the three remotes is the
+intended long-term canonical repo is a product/ops decision, not made here.
+
 ## 6. Feature → endpoint mapping (current state only)
 
 | Feature | Backend endpoint | Status |
@@ -223,7 +294,11 @@ isolation test).
 | TCO — "Backend TCO Calculation" panel | `POST /api/v1/tco/runs` | **Connected, verified live** (see §5a). History list (`GET /locomotives/:id/tco-runs`) has an API module but no UI yet. |
 | TCO — local slider playground | none (local `runTCOSimulation` engine) | **Local preview, now labeled as such.** Intentionally kept distinct from the backend engine per `TCO_ENGINE_SPECIFICATION.md`. |
 | Monte Carlo | `POST /api/v1/simulation-runs` | **Connected, verified live** (see §5a), including a real bug found and fixed during verification. History list has an API module but no UI yet. Variance-driver and input-distribution panels stay static/illustrative — no backend equivalent. |
-| Everything else (maintenance, reliability, asset-health, benchmark, tender, integrations, library, glossary, configure, sustainability, and the rest of the dashboard — KPI tiles, cost timeline, part-level table) | various, see `TCO_Backend/docs/openapi` or `GET /openapi.json` | **Not connected — still synthetic/local, out of scope so far.** Not yet individually audited against the backend's actual route list for these modules. |
+| Maintenance — "Live Maintenance & Cost Ledger" panel | `GET/POST/PATCH/DELETE .../maintenance-schedules`, `GET/POST .../cost-records` | **Connected, verified live** (see §5b), including role-gating verified with a real VIEWER account. Schedule edit (`PATCH`) has an API module but no UI. Cost records are append-only by backend design — no edit/delete exists or is built. |
+| Maintenance — Part-level visit planner | none (local engine, same pattern as BOM's Part level) | **Static reference data, now labeled as such.** |
+| Reliability, Asset Health, Benchmark, Forecasting, Tender, Integrations, Sustainability, Configuration (Product Taxonomy / Maintenance Rules / Standards Compliance tabs) | **none — no backend module exists for any of these** (confirmed by listing `TCO_Backend/src/modules`: only `assets, auth, costs, fleets, health, organizations, scenarios, simulation, tco, users`) | **Blocked by backend — not a frontend gap.** Still synthetic/local; wiring them would require fabricating endpoints, which is out of scope by the integration mandate itself. |
+| Organization settings (`GET/PATCH /organizations/me`) and team/user management (`GET/POST/PATCH-role/DELETE /users`) | exists on the backend | **No frontend screen exists for this at all.** Flagged as a product decision (build a settings/admin screen?), not implemented speculatively. |
+| Dashboard KPI tiles, cost timeline, part-level table on `/`; `library`; `glossary` | none | **Still synthetic/local** (glossary is static reference content by design, not a gap) — not audited this session. |
 
 ## 6a. Why BOM's Part level stayed static
 
@@ -244,32 +319,43 @@ supports at the Component level and above.
 
 The original request specified 10 phases covering every route, full UI
 design-system stabilization, deployment reconciliation, and three
-documentation files. Two sessions have now connected: auth + dashboard,
-Fleet Explorer + Live BOM, and Scenarios/TCO/Monte Carlo (partial — see §6).
-Not done, in priority order:
+documentation files. Three sessions have now connected: auth + dashboard,
+Fleet Explorer + Live BOM, Scenarios/TCO/Monte Carlo, and Maintenance (see
+§6). Not done, in priority order — genuinely actionable items first, then
+backend-blocked items that are not frontend work at all:
 
-1. Audit and wire the remaining screens (maintenance, reliability,
-   asset-health, benchmark, tender, integrations, forecasting, library,
-   configure, sustainability) against the backend's actual route list —
-   not yet even audited for what exists (the backend has `costs`, `users`,
-   `organizations` modules not yet inspected either).
-2. Scenario edit (`PATCH /scenarios/:id`) — endpoint exists, no UI.
-3. TCO/simulation run history UI (`GET /locomotives/:id/tco-runs`,
-   `GET /locomotives/:id/simulation-runs`) — API modules exist, no UI.
-4. 403 (wrong role) and cross-organization isolation browser verification
-   for scenarios/TCO/simulation — not exercised this session, only via the
-   existing unit tests' mocked 403/404 cases.
-5. Component edit UI (`PATCH /api/v1/components/:id`) in Live BOM —
+1. Scenario edit (`PATCH /scenarios/:id`) — endpoint exists, no UI.
+2. Maintenance schedule edit (`PATCH /maintenance-schedules/:id`) —
+   endpoint exists, no UI.
+3. Component edit UI (`PATCH /api/v1/components/:id`) in Live BOM —
    endpoint exists, only create/delete are wired.
-6. Typography/spacing/theme/logo/responsive UI pass (Phase 1 of the
-   original request) — not started.
-7. Reconcile the three git remotes (`origin`, `sahay`, `wayam`) — not
-   investigated. `origin` is pushed to continuously this session
-   (`arkabera2004/locomotive`, which GitHub reports moved to
-   `arkabera2004/TCO` — git follows the redirect automatically).
-8. Production deployment verification — not investigated; the backend's
+4. TCO/simulation run history UI (`GET /locomotives/:id/tco-runs`,
+   `GET /locomotives/:id/simulation-runs`) — API modules exist, no UI.
+5. Cross-organization isolation browser verification (two genuinely
+   separate organizations, not just two users in one org) — not exercised
+   in any session so far, only org-scoping via unit tests and the
+   backend's own `findFirst({organizationId})` pattern (read in source,
+   not independently black-box tested).
+6. 403 role-gating verification for TCO/simulation/component-create (BOM,
+   Scenarios, and Maintenance were verified live with a real VIEWER
+   account this session — see §5b).
+7. Typography/spacing/theme/logo/responsive UI pass (Phase 1 of the
+   original request) — not started in these three sessions; a prior,
+   separate stabilization pass exists in `docs/FRONTEND_STABILIZATION.md`
+   but predates the fleet-explorer/bom/scenarios/tco/maintenance changes
+   and should be re-run against them.
+8. A decision on whether to build a team/org-settings screen for the
+   backend's unused `organizations`/`users` modules (§5b) — product
+   decision, not started.
+9. Production deployment verification — not investigated; the backend's
    own prior audit notes `tco.wayam.ai` was last observed serving an
    older Vite build, unrelated to this Next.js repo.
+
+**Backend-blocked, not frontend work** (§5b, §6): Reliability, Asset
+Health, Benchmark, Forecasting, Tender, Integrations, Sustainability, and
+Configuration have no backend module at all. These cannot be connected
+without new backend endpoints — raise with the backend workstream if they
+need to become real.
 
 ## 8. Commit hashes (chronological, both sessions)
 
@@ -291,7 +377,13 @@ ba0f928 feat(scenarios): add Backend Scenario Library (real list/create/delete)
 cc27824 feat(monte-carlo): submit real simulation runs to POST /simulation-runs
 58561d1 feat(tco): add Backend TCO Calculation panel to the simulation page
 2f6b941 fix(monte-carlo): pass horizonYears on simulation run submission
+9dcf252 docs(frontend): record TCO/scenarios/monte-carlo session and verification
+1c9777b feat(api): add costs endpoint module (maintenance schedules, cost records)
+f507d21 feat(maintenance): add Live Maintenance & Cost Ledger panel
 ```
+
+(This document's own update commit for the third session follows this one
+in the log, committed after this edit.)
 
 All committed individually to `design-system-retrofit` and pushed to
 `origin` after each commit, no squashing, no force-push, no backend-repo
