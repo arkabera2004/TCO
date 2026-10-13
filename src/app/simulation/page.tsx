@@ -46,7 +46,7 @@ import { partTCO, fleetTCO, eventPartsCost, formatInterval } from "@/utils/tcoEn
 import { fmtCompact, fmtUSD } from "@/utils/formatters";
 import { cn } from "@/lib/utils";
 import { useLocomotives } from "@/hooks/use-locomotives";
-import { createTcoRun, type BackendTcoRun } from "@/lib/api/tco";
+import { createTcoRun, listTcoRunsForLocomotive, type BackendTcoRun } from "@/lib/api/tco";
 import { listScenarios, type BackendScenario } from "@/lib/api/scenarios";
 import { ApiError } from "@/lib/api/client";
 
@@ -515,6 +515,8 @@ function BackendTcoRunPanel() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [history, setHistory] = useState<BackendTcoRun[] | null>(null);
+
   useEffect(() => {
     listScenarios()
       .then(setScenarios)
@@ -522,6 +524,17 @@ function BackendTcoRunPanel() {
         /* scenario picker is optional; silently fall back to horizonYears-only */
       });
   }, []);
+
+  const loadHistory = (locoId: string) => {
+    listTcoRunsForLocomotive(locoId)
+      .then(setHistory)
+      .catch(() => setHistory(null));
+  };
+
+  useEffect(() => {
+    setRun(null);
+    if (activeLocoId) loadHistory(activeLocoId);
+  }, [activeLocoId]);
 
   const submit = async () => {
     if (!activeLocoId) return;
@@ -534,6 +547,7 @@ function BackendTcoRunPanel() {
         scenarioId: scenarioId || undefined,
       });
       setRun(result);
+      loadHistory(activeLocoId);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "TCO calculation failed.");
     } finally {
@@ -617,6 +631,33 @@ function BackendTcoRunPanel() {
             value={fmtUSD(run.outputs.avgAnnualCost)}
             tone="neutral"
           />
+        </div>
+      )}
+      {history && history.length > 0 && (
+        <div className="mt-4 border-t border-muted pt-3">
+          <h4 className="mb-2 text-caption uppercase tracking-[0.08em] text-quaternary">
+            Run History — {history.length} persisted run{history.length === 1 ? "" : "s"}
+          </h4>
+          <ul className="space-y-1">
+            {history.map((r) => (
+              <li key={r.id}>
+                <button
+                  onClick={() => setRun(r)}
+                  className={cn(
+                    "flex w-full items-center justify-between rounded-md border px-2.5 py-1.5 text-left text-body-sm",
+                    run?.id === r.id
+                      ? "border-default bg-action-selected"
+                      : "border-muted hover:border-default hover:bg-hover",
+                  )}
+                >
+                  <span className="text-secondary">
+                    {new Date(r.createdAt).toLocaleString()} · {r.horizonYears}yr
+                  </span>
+                  <span className="font-mono-data text-primary">{fmtUSD(r.outputs.totalCost)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </Panel>

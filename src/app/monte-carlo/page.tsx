@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -21,7 +21,11 @@ import { fmtCompact } from "@/utils/formatters";
 import { AppIcon } from "@/components/icons/AppIcon";
 import { cn } from "@/lib/utils";
 import { useLocomotives } from "@/hooks/use-locomotives";
-import { createSimulationRun, type BackendSimulationRun } from "@/lib/api/simulation";
+import {
+  createSimulationRun,
+  listSimulationRunsForLocomotive,
+  type BackendSimulationRun,
+} from "@/lib/api/simulation";
 import { ApiError } from "@/lib/api/client";
 
 const MC = MONTE_CARLO_RESULTS;
@@ -35,6 +39,18 @@ export default function MonteCarloPage() {
   const [run, setRun] = useState<BackendSimulationRun | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<BackendSimulationRun[] | null>(null);
+
+  const loadHistory = (locoId: string) => {
+    listSimulationRunsForLocomotive(locoId)
+      .then(setHistory)
+      .catch(() => setHistory(null));
+  };
+
+  useEffect(() => {
+    setRun(null);
+    if (activeLocoId) loadHistory(activeLocoId);
+  }, [activeLocoId]);
 
   const rerun = async () => {
     if (running || !activeLocoId) return;
@@ -47,6 +63,7 @@ export default function MonteCarloPage() {
         horizonYears: 20,
       });
       setRun(result);
+      loadHistory(activeLocoId);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Simulation run failed.");
     } finally {
@@ -396,6 +413,35 @@ export default function MonteCarloPage() {
             </p>
           </Panel>
         </SplitRow>
+
+        {history && history.length > 0 && (
+          <Panel
+            title={`Run History — ${history.length} persisted run${history.length === 1 ? "" : "s"}`}
+            padded={false}
+          >
+            <ul className="divide-y divide-muted">
+              {history.map((r) => (
+                <li key={r.id}>
+                  <button
+                    onClick={() => setRun(r)}
+                    className={cn(
+                      "flex w-full items-center justify-between px-3 py-2 text-left text-body-sm",
+                      run?.id === r.id ? "bg-action-selected" : "hover:bg-hover",
+                    )}
+                  >
+                    <span className="text-secondary">
+                      {new Date(r.createdAt).toLocaleString()} · {r.iterations.toLocaleString()}{" "}
+                      iterations · seed {r.seed.slice(0, 8)}
+                    </span>
+                    <span className="font-mono-data text-primary">
+                      P50 {fmtCompact(r.percentiles.p50)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        )}
       </PageBody>
     </div>
   );
