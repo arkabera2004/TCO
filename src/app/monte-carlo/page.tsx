@@ -41,7 +41,11 @@ export default function MonteCarloPage() {
     setRunning(true);
     setError(null);
     try {
-      const result = await createSimulationRun({ locomotiveId: activeLocoId, iterations: 1000 });
+      const result = await createSimulationRun({
+        locomotiveId: activeLocoId,
+        iterations: 1000,
+        horizonYears: 20,
+      });
       setRun(result);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Simulation run failed.");
