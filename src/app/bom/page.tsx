@@ -46,6 +46,13 @@ import {
 import { fmtUSD, fmtCompact, fmtNum } from "@/utils/formatters";
 import { alpha, cn } from "@/lib/utils";
 import { AppIcon } from "@/components/icons/AppIcon";
+import { useLocomotives } from "@/hooks/use-locomotives";
+import { useLocomotive } from "@/hooks/use-locomotive";
+import { createSystem } from "@/lib/api/systems";
+import { createAssembly } from "@/lib/api/assemblies";
+import { ApiError } from "@/lib/api/client";
+import { getSession } from "@/lib/api/session";
+import type { BackendSystemNode } from "@/lib/api/locomotives";
 
 const LOCO_ID = "loco-001"; // ES44AC — the fully-detailed BOM
 const TCO_HORIZON = 20;
@@ -75,7 +82,7 @@ export default function BomExplorer() {
     () => new Set([LOCO_ID, "sys-eng", "asm-ep"]),
   );
   const [selectedId, setSelectedId] = useState<string | null>(parts[4]?.id ?? null); // turbocharger
-  const [view, setView] = useState<"tree" | "inventory" | "depreciation">("tree");
+  const [view, setView] = useState<"tree" | "inventory" | "depreciation" | "live">("tree");
 
   // Resolve from the store each render so live edits reach the detail panel.
   const selectedPart = parts.find((p) => p.id === selectedId) ?? null;
@@ -130,11 +137,12 @@ export default function BomExplorer() {
           <div className="flex items-center gap-2">
             <FilterChips
               value={view}
-              onChange={(k) => setView(k as "tree" | "inventory" | "depreciation")}
+              onChange={(k) => setView(k as "tree" | "inventory" | "depreciation" | "live")}
               options={[
-                { id: "tree", label: "5-Level Hierarchy Tree" },
-                { id: "inventory", label: "Inventory & Criticality" },
-                { id: "depreciation", label: "Depreciation & Capital" },
+                { id: "tree", label: "5-Level Hierarchy Tree (reference data)" },
+                { id: "inventory", label: "Inventory & Criticality (reference data)" },
+                { id: "depreciation", label: "Depreciation & Capital (reference data)" },
+                { id: "live", label: "Live Locomotive BOM" },
               ]}
             />
             <Link
@@ -221,14 +229,17 @@ export default function BomExplorer() {
         {view === "depreciation" && (
           <DepreciationView parts={parts} selected={selectedPart} onSelect={setSelectedPart} />
         )}
+        {view === "live" && <LiveHierarchyView />}
 
         {/* Part-level TCO table */}
-        <PartTCOTable
-          parts={parts}
-          laborPct={laborPct}
-          onSelect={setSelectedPart}
-          selected={selectedPart}
-        />
+        {view !== "live" && (
+          <PartTCOTable
+            parts={parts}
+            laborPct={laborPct}
+            onSelect={setSelectedPart}
+            selected={selectedPart}
+          />
+        )}
       </PageBody>
     </div>
   );
@@ -1348,5 +1359,248 @@ function PartTCOTable({
         defaultSort={{ key: "totalCost", dir: "desc" }}
       />
     </Panel>
+  );
+}
+
+/* ────────────────────────── LIVE LOCOMOTIVE BOM (real backend) ────────────────────────── */
+
+const inputCls =
+  "w-full rounded-md border border-muted bg-action px-2.5 py-1.5 text-body-sm text-primary outline-none placeholder:text-quaternary focus-visible:border-default focus-visible:ring-1 focus-visible:ring-active";
+
+function LiveHierarchyView() {
+  const locomotives = useLocomotives();
+  const [locoId, setLocoId] = useState<string | null>(null);
+  const activeLocoId =
+    locoId ?? (locomotives.status === "success" ? (locomotives.data[0]?.id ?? null) : null);
+  const detail = useLocomotive(activeLocoId);
+
+  const canWrite = useMemo(() => {
+    const role = getSession()?.role;
+    return role === "ADMIN" || role === "MANAGER";
+  }, []);
+
+  if (locomotives.status === "loading") {
+    return (
+      <Panel title="Live Locomotive BOM">
+        <p className="p-4 text-body-sm text-tertiary">Loading fleet…</p>
+      </Panel>
+    );
+  }
+  if (locomotives.status === "error") {
+    return (
+      <Panel title="Live Locomotive BOM">
+        <EmptyState title="Couldn't load the fleet" detail={locomotives.error} />
+      </Panel>
+    );
+  }
+  if (locomotives.data.length === 0) {
+    return (
+      <Panel title="Live Locomotive BOM">
+        <EmptyState title="No locomotives yet" detail="Add a locomotive to build its BOM." />
+      </Panel>
+    );
+  }
+
+  return (
+    <Panel
+      title="Live Locomotive BOM"
+      action={
+        <select
+          value={activeLocoId ?? ""}
+          onChange={(e) => setLocoId(e.target.value)}
+          className={cn(inputCls, "w-56")}
+        >
+          {locomotives.data.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.model}
+            </option>
+          ))}
+        </select>
+      }
+    >
+      {detail.status === "loading" && (
+        <p className="p-4 text-body-sm text-tertiary">Loading hierarchy…</p>
+      )}
+      {detail.status === "error" && (
+        <EmptyState
+          title={detail.notFound ? "Locomotive not found" : "Couldn't load the hierarchy"}
+          detail={detail.error}
+        />
+      )}
+      {detail.status === "success" && (
+        <div className="space-y-4 p-3">
+          {detail.data.systems.map((s) => (
+            <SystemBlock
+              key={s.id}
+              locomotiveId={detail.data.id}
+              system={s}
+              canWrite={canWrite}
+              onChanged={detail.refetch}
+            />
+          ))}
+          {canWrite && <AddSystemForm locomotiveId={detail.data.id} onCreated={detail.refetch} />}
+          {!canWrite && (
+            <p className="text-caption text-quaternary">
+              Your role doesn&apos;t permit creating systems or assemblies.
+            </p>
+          )}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function SystemBlock({
+  locomotiveId,
+  system,
+  canWrite,
+  onChanged,
+}: {
+  locomotiveId: string;
+  system: BackendSystemNode;
+  canWrite: boolean;
+  onChanged: () => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
+    if (!name.trim()) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await createAssembly(locomotiveId, system.id, { name: name.trim() });
+      setName("");
+      setAdding(false);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't create assembly.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-muted p-3">
+      <div className="flex items-center justify-between">
+        <span className="font-semibold text-primary">{system.name}</span>
+        <span
+          className="font-mono-data rounded-full px-2 py-0.5 text-caption font-bold"
+          style={{
+            background: `${healthColor(system.healthScore)}22`,
+            color: healthColor(system.healthScore),
+          }}
+        >
+          {system.criticality} · {system.healthScore.toFixed(0)}%
+        </span>
+      </div>
+      <ul className="mt-2 ml-4 space-y-1 text-body-sm text-secondary">
+        {system.assemblies.map((a) => (
+          <li key={a.id}>
+            {a.name}{" "}
+            <span className="text-caption text-quaternary">({a.components.length} components)</span>
+          </li>
+        ))}
+        {system.assemblies.length === 0 && (
+          <li className="text-caption text-quaternary">No assemblies yet.</li>
+        )}
+      </ul>
+      {canWrite && (
+        <div className="mt-2">
+          {adding ? (
+            <div className="flex items-center gap-2">
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Assembly name"
+                className={cn(inputCls, "w-48")}
+              />
+              <button
+                onClick={submit}
+                disabled={submitting}
+                className="rounded-md bg-action-primary px-3 py-1.5 text-label-sm text-on-color disabled:opacity-50"
+              >
+                Add
+              </button>
+              <button
+                onClick={() => {
+                  setAdding(false);
+                  setError(null);
+                }}
+                className="text-label-sm text-tertiary"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setAdding(true)} className="text-label-sm text-action-primary">
+              + Add assembly
+            </button>
+          )}
+          {error && <p className="mt-1 text-caption text-error">{error}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AddSystemForm({
+  locomotiveId,
+  onCreated,
+}: {
+  locomotiveId: string;
+  onCreated: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [criticality, setCriticality] = useState("Essential");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
+    if (!name.trim()) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await createSystem(locomotiveId, { name: name.trim(), icon: "layers", criticality });
+      setName("");
+      onCreated();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't create system.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-dashed border-muted p-3">
+      <p className="mb-2 text-caption uppercase tracking-[0.08em] text-quaternary">Add System</p>
+      <div className="flex items-center gap-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="System name"
+          className={cn(inputCls, "w-48")}
+        />
+        <select
+          value={criticality}
+          onChange={(e) => setCriticality(e.target.value)}
+          className={cn(inputCls, "w-36")}
+        >
+          <option value="Vital">Vital</option>
+          <option value="Essential">Essential</option>
+          <option value="Desirable">Desirable</option>
+        </select>
+        <button
+          onClick={submit}
+          disabled={submitting}
+          className="rounded-md bg-action-primary px-3 py-1.5 text-label-sm text-on-color disabled:opacity-50"
+        >
+          Add
+        </button>
+      </div>
+      {error && <p className="mt-1 text-caption text-error">{error}</p>}
+    </div>
   );
 }
