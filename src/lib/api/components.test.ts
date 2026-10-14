@@ -91,6 +91,20 @@ describe("components api", () => {
     );
   });
 
+  it("updateComponent PATCHes /components/:id with the full engineering field set", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ data: { id: "cmp-1", ...sampleInput } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await updateComponent("cmp-1", sampleInput);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/components/cmp-1",
+      expect.objectContaining({ method: "PATCH", body: JSON.stringify(sampleInput) }),
+    );
+  });
+
   it("deleteComponent DELETEs /components/:id and tolerates an empty body", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchMock);
