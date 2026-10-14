@@ -51,9 +51,10 @@ import { useLocomotive } from "@/hooks/use-locomotive";
 import { createSystem } from "@/lib/api/systems";
 import { createAssembly } from "@/lib/api/assemblies";
 import { createComponent, deleteComponent, updateComponent } from "@/lib/api/components";
+import type { ComponentInput } from "@/lib/api/components";
 import { ApiError } from "@/lib/api/client";
 import { getSession } from "@/lib/api/session";
-import type { BackendAssembly, BackendSystemNode } from "@/lib/api/locomotives";
+import type { BackendAssembly, BackendComponent, BackendSystemNode } from "@/lib/api/locomotives";
 
 const LOCO_ID = "loco-001"; // ES44AC — the fully-detailed BOM
 const TCO_HORIZON = 20;
@@ -1566,13 +1567,9 @@ function AssemblyBlock({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
+  const [editForm, setEditForm] = useState<ComponentInput | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
 
-  // shortcut: engineering fields (MTBF, Weibull, warranty, labor %, downtime
-  // cost) use fleet-typical defaults here and are not editable — name is the
-  // only field exposed for create/edit. Upgrade to a complete field set if a
-  // real engineering workflow needs it.
   const submit = async () => {
     if (!name.trim()) return;
     setSubmitting(true);
@@ -1613,13 +1610,34 @@ function AssemblyBlock({
     }
   };
 
+  const startEdit = (c: BackendComponent) => {
+    setEditingId(c.id);
+    setEditForm({
+      assemblyId: c.assemblyId,
+      name: c.name,
+      purchaseCost: c.purchaseCost,
+      replacementCost: c.replacementCost,
+      lifeYears: c.lifeYears,
+      mtbfHours: c.mtbfHours,
+      weibullBeta: c.weibullBeta,
+      weibullEta: c.weibullEta,
+      mttrHours: c.mttrHours,
+      warrantyYears: c.warrantyYears,
+      laborCostPct: c.laborCostPct,
+      failureImpact: c.failureImpact,
+      category: c.category,
+      downtimeCostPerDay: c.downtimeCostPerDay,
+    });
+  };
+
   const saveEdit = async (id: string) => {
-    if (!editName.trim()) return;
+    if (!editForm || !editForm.name.trim()) return;
     setSavingEdit(true);
     setError(null);
     try {
-      await updateComponent(id, { name: editName.trim() });
+      await updateComponent(id, editForm);
       setEditingId(null);
+      setEditForm(null);
       onChanged();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't update component.");
@@ -1639,24 +1657,113 @@ function AssemblyBlock({
       {assembly.components.length > 0 && (
         <ul className="mt-1 ml-3 space-y-0.5">
           {assembly.components.map((c) =>
-            editingId === c.id ? (
-              <li key={c.id} className="flex items-center gap-1.5 py-0.5">
-                <input
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  className={cn(inputCls, "h-6 flex-1 py-0.5 text-caption")}
-                  autoFocus
-                />
-                <button
-                  onClick={() => saveEdit(c.id)}
-                  disabled={savingEdit}
-                  className="text-caption text-action-primary disabled:opacity-50"
-                >
-                  Save
-                </button>
-                <button onClick={() => setEditingId(null)} className="text-caption text-quaternary">
-                  Cancel
-                </button>
+            editingId === c.id && editForm ? (
+              <li
+                key={c.id}
+                className="rounded-md border border-border-subtle bg-surface-raised p-2"
+              >
+                <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                  <EditField label="Name">
+                    <input
+                      value={editForm.name}
+                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                      className={cn(inputCls, "h-6 w-full py-0.5 text-caption")}
+                      autoFocus
+                    />
+                  </EditField>
+                  <EditField label="Category">
+                    <input
+                      value={editForm.category}
+                      onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+                      className={cn(inputCls, "h-6 w-full py-0.5 text-caption")}
+                    />
+                  </EditField>
+                  <EditField label="Failure impact">
+                    <input
+                      value={editForm.failureImpact}
+                      onChange={(e) => setEditForm({ ...editForm, failureImpact: e.target.value })}
+                      className={cn(inputCls, "h-6 w-full py-0.5 text-caption")}
+                    />
+                  </EditField>
+                  <EditField label="Purchase cost">
+                    <NumberField
+                      value={editForm.purchaseCost}
+                      onChange={(v) => setEditForm({ ...editForm, purchaseCost: v })}
+                    />
+                  </EditField>
+                  <EditField label="Replacement cost">
+                    <NumberField
+                      value={editForm.replacementCost}
+                      onChange={(v) => setEditForm({ ...editForm, replacementCost: v })}
+                    />
+                  </EditField>
+                  <EditField label="Life (years)">
+                    <NumberField
+                      value={editForm.lifeYears}
+                      onChange={(v) => setEditForm({ ...editForm, lifeYears: v })}
+                    />
+                  </EditField>
+                  <EditField label="MTBF (hours)">
+                    <NumberField
+                      value={editForm.mtbfHours}
+                      onChange={(v) => setEditForm({ ...editForm, mtbfHours: v })}
+                    />
+                  </EditField>
+                  <EditField label="Weibull β">
+                    <NumberField
+                      value={editForm.weibullBeta}
+                      onChange={(v) => setEditForm({ ...editForm, weibullBeta: v })}
+                    />
+                  </EditField>
+                  <EditField label="Weibull η">
+                    <NumberField
+                      value={editForm.weibullEta}
+                      onChange={(v) => setEditForm({ ...editForm, weibullEta: v })}
+                    />
+                  </EditField>
+                  <EditField label="MTTR (hours)">
+                    <NumberField
+                      value={editForm.mttrHours}
+                      onChange={(v) => setEditForm({ ...editForm, mttrHours: v })}
+                    />
+                  </EditField>
+                  <EditField label="Warranty (years)">
+                    <NumberField
+                      value={editForm.warrantyYears}
+                      onChange={(v) => setEditForm({ ...editForm, warrantyYears: v })}
+                    />
+                  </EditField>
+                  <EditField label="Labor cost %">
+                    <NumberField
+                      value={editForm.laborCostPct}
+                      onChange={(v) => setEditForm({ ...editForm, laborCostPct: v })}
+                    />
+                  </EditField>
+                  <EditField label="Downtime cost/day">
+                    <NumberField
+                      value={editForm.downtimeCostPerDay}
+                      onChange={(v) => setEditForm({ ...editForm, downtimeCostPerDay: v })}
+                    />
+                  </EditField>
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    onClick={() => saveEdit(c.id)}
+                    disabled={savingEdit}
+                    className="rounded-md bg-action-primary px-3 py-1 text-caption text-on-color disabled:opacity-50"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditingId(null);
+                      setEditForm(null);
+                    }}
+                    className="text-caption text-quaternary"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </li>
             ) : (
               <li key={c.id} className="flex items-center justify-between text-caption">
@@ -1664,10 +1771,7 @@ function AssemblyBlock({
                 {canWrite && (
                   <span className="flex items-center gap-2">
                     <button
-                      onClick={() => {
-                        setEditingId(c.id);
-                        setEditName(c.name);
-                      }}
+                      onClick={() => startEdit(c)}
                       className="text-quaternary hover:text-primary"
                       aria-label={`Edit ${c.name}`}
                     >
@@ -1782,5 +1886,25 @@ function AddSystemForm({
       </div>
       {error && <p className="mt-1 text-caption text-error">{error}</p>}
     </div>
+  );
+}
+
+function EditField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="flex flex-col gap-0.5">
+      <span className="text-caption text-quaternary">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function NumberField({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+  return (
+    <input
+      type="number"
+      value={value}
+      onChange={(e) => onChange(e.target.valueAsNumber)}
+      className={cn(inputCls, "h-6 w-full py-0.5 text-caption")}
+    />
   );
 }
