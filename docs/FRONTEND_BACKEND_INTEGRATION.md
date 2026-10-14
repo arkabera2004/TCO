@@ -450,7 +450,7 @@ blocker instead.
 | Maintenance — "Live Maintenance & Cost Ledger" panel | `GET/POST/PATCH/DELETE .../maintenance-schedules`, `GET/POST .../cost-records` | **Connected, verified live**, full CRUD including edit (see §5b, §5d), including role-gating verified with a real VIEWER account. Cost records are append-only by backend design — no edit/delete exists or is built. |
 | Maintenance — Part-level visit planner | none (local engine, same pattern as BOM's Part level) | **Static reference data, now labeled as such.** |
 | Reliability, Asset Health, Benchmark, Forecasting, Tender, Integrations, Sustainability, Configuration (Product Taxonomy / Maintenance Rules / Standards Compliance tabs) | **none — no backend module exists for any of these** (confirmed by listing `TCO_Backend/src/modules`: only `assets, auth, costs, fleets, health, organizations, scenarios, simulation, tco, users`) | **Blocked by backend — not a frontend gap.** Still synthetic/local; wiring them would require fabricating endpoints, which is out of scope by the integration mandate itself. |
-| Organization settings (`GET/PATCH /organizations/me`) and team/user management (`GET/POST/PATCH-role/DELETE /users`) | exists on the backend | **No frontend screen exists for this at all.** Flagged as a product decision (build a settings/admin screen?), not implemented speculatively. |
+| Organization settings (`GET/PATCH /organizations/me`) and team/user management (`GET/POST/PATCH-role/DELETE /users`) | `GET/PATCH /organizations/me`, `GET/POST /users`, `PATCH /users/:id/role`, `DELETE /users/:id` | **Connected, verified live.** New `/settings` screen (ADMIN-gated, matching the backend's `requireRole('ADMIN')`): org rename, member list, invite, role change, deactivate. Browser-verified against a live registered ADMIN account — rename, invite, role change, and deactivate all persisted through a page reload; a VIEWER-role session correctly sees an "Admin access required" empty state instead of the forms. |
 | Dashboard KPI tiles, cost timeline, part-level table on `/`; `library`; `glossary` | none | **Still synthetic/local** (glossary is static reference content by design, not a gap) — not audited this session. |
 
 ## 6a. Why BOM's Part level stayed static
@@ -481,19 +481,19 @@ role-gating checks were verified in §5g with no code changes needed. Not
 done, in priority order — genuinely actionable items first, then
 backend-blocked items that are not frontend work at all:
 
-1. Component full field editing in Live BOM — only `name` is
-   create/editable; MTBF, Weibull β/η, warranty, labor %, downtime cost
-   default on create and have no edit UI (§5e). Not attempted because no
-   workflow has asked for it yet, not because it's hard — `updateComponent`
-   already accepts a `Partial<ComponentInput>`.
+1. ~~Component full field editing in Live BOM~~ — **done.** The edit form
+   now covers every field `updateComponent` accepts (purchase/replacement
+   cost, life years, MTBF, Weibull β/η, MTTR, warranty, labor %, failure
+   impact, category, downtime cost/day), pre-filled from the component's
+   real current values instead of defaulting on save.
 2. Typography/spacing/theme/logo/responsive UI pass (Phase 1 of the
    original request) — not started in these seven increments; a prior,
    separate stabilization pass exists in `docs/FRONTEND_STABILIZATION.md`
-   but predates the fleet-explorer/bom/scenarios/tco/maintenance changes
-   and should be re-run against them.
-3. A decision on whether to build a team/org-settings screen for the
-   backend's unused `organizations`/`users` modules (§5b) — product
-   decision, not started.
+   but predates the fleet-explorer/bom/scenarios/tco/maintenance/settings
+   changes and should be re-run against them.
+3. ~~A decision on whether to build a team/org-settings screen~~ — **done.**
+   Built `/settings` (ADMIN-only) wired to the backend's `organizations`
+   and `users` modules; browser-verified live.
 4. **Deploy this Next.js app to production** — confirmed in §5h this has
    likely never happened. `tco.wayam.ai` and this repo's own linked
    Vercel project (`tco`) both still serve a 64-day-old legacy
