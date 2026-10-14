@@ -34,6 +34,7 @@ const NAV: NavItem[] = [
   { to: "/integrations", label: "Integrations", icon: "integrations", badge: "NEW" },
   { to: "/glossary", label: "Glossary", icon: "glossary", badge: "NEW" },
   { to: "/configure", label: "Configure", icon: "settings" },
+  { to: "/settings", label: "Settings", icon: "users" },
 ];
 
 const ROUTE_TITLES: Record<string, string> = {
@@ -54,6 +55,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/integrations": "Data Integration Hub",
   "/glossary": "Glossary — What Every Cost Category Includes",
   "/configure": "Self-Service Configuration",
+  "/settings": "Organization & Team Settings",
 };
 
 /** Short label for the breadcrumb — the full title goes in the page heading. */
