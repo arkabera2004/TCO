@@ -55,6 +55,7 @@ export default function MaintenanceLibrary() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <PageHeader
         title="Maintenance Library — Part Cost Definitions"
+        mark={<StatusBadge tone="warning">Preview data</StatusBadge>}
         description="Part maintenance intervals, replacement unit costs, warranties and failure rates. Every value below is editable and hot-recalculates fleet TCO in real-time."
         actions={
           <div className="flex items-center gap-2">
