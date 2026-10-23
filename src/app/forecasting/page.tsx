@@ -89,6 +89,7 @@ export default function ForecastingEngine() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <PageHeader
         title="Forecasting Engine — Lifecycle Operating Cost"
+        mark={<StatusBadge tone="warning">Preview data</StatusBadge>}
         description="Statistical lifecycle cost projections with calibrated uncertainty bands, historical backtesting, and multi-model trend estimation."
         actions={
           <div className="flex flex-wrap items-center gap-2">
