@@ -70,6 +70,7 @@ export default function Integrations() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <PageHeader
         title="Data Integration Hub — Telemetry & Enterprise Feeds"
+        mark={<StatusBadge tone="warning">Preview data</StatusBadge>}
         description="Data ingestion pipelines and enterprise connectors linking SAP PM, IBM Maximo, Wabtec Edge, Railinc Umler, and wayside sensors into the canonical SAHAY engine."
         actions={
           <div className="flex items-center gap-1 rounded-full border border-muted bg-container p-0.5">
