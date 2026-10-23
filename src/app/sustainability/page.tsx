@@ -72,6 +72,7 @@ export default function Sustainability() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <PageHeader
         title="Sustainability & Decarbonization Intelligence"
+        mark={<StatusBadge tone="warning">Preview data</StatusBadge>}
         description="Fleet carbon trajectory, emissions per ton-km, carbon tax exposure, and ESG compliance aligned with EU Green Deal and EPA Tier 4 standards."
       />
 
