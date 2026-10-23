@@ -221,6 +221,12 @@ Wiring any of them would mean fabricating endpoints, which the integration
 mandate explicitly disallows. They remain local/synthetic and are
 documented as **blocked by backend** in §6, not "not done yet."
 
+Since this was previously undisclosed in the UI itself, all 9 pages
+(asset-health, benchmark, configure, forecasting, integrations, library,
+reliability, sustainability, tender) now carry a "Preview data"
+`StatusBadge` next to the page title (`mark` prop on `PageHeader`), so the
+synthetic-data status is visible to users, not just to this doc.
+
 Also found: `organizations` (`GET/PATCH /organizations/me`) and `users`
 (`GET/POST/PATCH role/DELETE /users`) modules exist with no corresponding
 frontend screen at all (no team/admin-settings route exists in this app).
