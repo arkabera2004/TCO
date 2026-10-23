@@ -38,6 +38,7 @@ export default function ReliabilityPage() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <PageHeader
         title="Reliability & Warranty Analytics"
+        mark={<StatusBadge tone="warning">Preview data</StatusBadge>}
         description="RAMS dashboard, remaining useful life, warranty analytics and failure heatmaps aligned with EN 50126, ISO 55000, and IEC 60300 frameworks."
         actions={
           <div className="flex items-center gap-1 rounded-full border border-muted bg-container p-1">
