@@ -125,6 +125,7 @@ export default function Benchmark() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <PageHeader
         title="Benchmark Arena — Competitive OEM Intelligence"
+        mark={<StatusBadge tone="warning">Preview data</StatusBadge>}
         description="Head-to-head lifecycle economics and technical comparison across major freight locomotive platforms: Wabtec, GE, Alstom, and Siemens."
       />
 
