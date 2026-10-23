@@ -22,6 +22,7 @@ export default function AssetHealthPage() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <PageHeader
         title="Asset Health Index — Fleet Hierarchy"
+        mark={<StatusBadge tone="warning">Preview data</StatusBadge>}
         description="Hierarchical condition monitoring: component → system → locomotive → fleet. Real-time sensor telemetry and Weibull failure risk modeling."
         actions={
           <div className="flex items-center gap-2">
