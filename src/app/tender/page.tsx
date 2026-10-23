@@ -41,6 +41,7 @@ export default function TenderMode() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <PageHeader
         title="Tender Optimization — Commercial Bid Architect"
+        mark={<StatusBadge tone="warning">Preview data</StatusBadge>}
         description="Configure client requirements, tender volume, target budget, and generate commercial lifecycle guarantees directly from live simulation models."
         actions={
           <div className="flex items-center gap-2">
