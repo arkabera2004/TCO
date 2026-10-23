@@ -25,6 +25,7 @@ export default function ConfigurePage() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <PageHeader
         title="System Configuration & Standards"
+        mark={<StatusBadge tone="warning">Preview data</StatusBadge>}
         description="Product taxonomy architecture, maintenance interval trigger builder, and international railway standards compliance matrices."
         actions={
           <div className="flex items-center gap-1 rounded-full border border-muted bg-container p-0.5">
